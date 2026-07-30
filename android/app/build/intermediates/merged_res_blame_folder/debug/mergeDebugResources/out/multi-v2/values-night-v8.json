@@ -1,0 +1,53 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.carfix.app-mergeDebugResources-26:/values-night-v8/values-night-v8.xml",
+            "map": [
+                {
+                    "source": "/home/jertel/.gradle/caches/transforms-4/588e985b421d440a606d85f086637998/transformed/appcompat-1.6.1/res/values-night-v8/values-night-v8.xml",
+                    "from": {
+                        "startLines": "2,3,4,5,6,7,8,9",
+                        "startColumns": "4,4,4,4,4,4,4,4",
+                        "startOffsets": "55,125,209,293,389,491,593,687",
+                        "endColumns": "69,83,83,95,101,101,93,88",
+                        "endOffsets": "120,204,288,384,486,588,682,771"
+                    },
+                    "to": {
+                        "startLines": "7,8,9,10,11,12,13,14",
+                        "startColumns": "4,4,4,4,4,4,4,4",
+                        "startOffsets": "339,409,493,577,673,775,877,971",
+                        "endColumns": "69,83,83,95,101,101,93,88",
+                        "endOffsets": "404,488,572,668,770,872,966,1055"
+                    }
+                },
+                {
+                    "source": "/home/jertel/.gradle/caches/transforms-4/cceb9ba249deca0ecf992252683fb904/transformed/jetified-core-splashscreen-1.0.1/res/values-night-v8/values-night-v8.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "85",
+                        "endOffsets": "136"
+                    },
+                    "to": {
+                        "startLines": "6",
+                        "startColumns": "4",
+                        "startOffsets": "253",
+                        "endColumns": "85",
+                        "endOffsets": "334"
+                    }
+                },
+                {
+                    "source": "/home/jertel/.gradle/caches/transforms-4/a0d8f2b92304659d4c41135a1855033e/transformed/jetified-app-1.4.0/res/values-night-v8/values-night-v8.xml",
+                    "from": {
+                        "startLines": "2,3,4,5",
+                        "startColumns": "4,4,4,4",
+                        "startOffsets": "55,104,154,202",
+                        "endColumns": "48,49,47,50",
+                        "endOffsets": "99,149,197,248"
+                    }
+                }
+            ]
+        }
+    ]
+}

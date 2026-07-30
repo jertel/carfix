@@ -1,0 +1,73 @@
+// CarFix Theme Tokens & Accessible Light/Dark Mode Styling
+:root {
+  --carfix-bg: #f5f7fa;
+  --carfix-card-bg: #ffffff;
+  --carfix-text: #1a1a1a;
+  --carfix-border: #e2e8f0;
+  --carfix-focus-ring: #027be3;
+  --carfix-code-bg: #f1f5f9;
+  --carfix-code-text: #1e293b;
+  --carfix-bar-bg: #ffffff;
+  --carfix-error-text: #c10015;
+}
+
+body.body--dark {
+  --carfix-bg: #121212;
+  --carfix-card-bg: #1e1e1e;
+  --carfix-text: #f1f5f9;
+  --carfix-border: #334155;
+  --carfix-focus-ring: #4fc3f7;
+  --carfix-code-bg: #0f172a;
+  --carfix-code-text: #f8fafc;
+  --carfix-bar-bg: #0f172a;
+  --carfix-error-text: #ffaa66;
+
+  background-color: var(--carfix-bg) !important;
+  color: var(--carfix-text) !important;
+
+  .text-negative,
+  .carfix-error-text {
+    color: var(--carfix-error-text) !important;
+  }
+}
+
+.carfix-error-text {
+  color: var(--carfix-error-text) !important;
+}
+
+body {
+  background-color: var(--carfix-bg);
+  color: var(--carfix-text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.carfix-card {
+  background-color: var(--carfix-card-bg) !important;
+  color: var(--carfix-text) !important;
+  border: 1px solid var(--carfix-border) !important;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.carfix-code-block {
+  background-color: var(--carfix-code-bg) !important;
+  color: var(--carfix-code-text) !important;
+  border: 1px solid var(--carfix-border) !important;
+}
+
+/* Opaque Solid Mobile Bottom Navigation Bar */
+.carfix-bottom-bar {
+  background-color: var(--carfix-bar-bg) !important;
+  opacity: 1 !important;
+  border-top: 1px solid var(--carfix-border) !important;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.12) !important;
+  z-index: 2000 !important;
+}
+
+.font-mono {
+  font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+.shrink-0 {
+  flex-shrink: 0 !important;
+}

@@ -1,0 +1,94 @@
+{
+  "app": {
+    "title": "CarFix Vehicle Programmer",
+    "subtitle": "Modular Vehicle Configuration & Diagnostics",
+    "connected": "Connected",
+    "disconnected": "Disconnected",
+    "connect": "Connect Adapter",
+    "disconnect": "Disconnect"
+  },
+  "nav": {
+    "options": "Vehicle Options",
+    "connect": "Connection"
+  },
+  "options": {
+    "doubleHornHonk": {
+      "name": "Double Horn Honk Removal",
+      "desc": "Removes the double horn honk when closing doors while the vehicle is running with key fob outside."
+    },
+    "laneChangeAssist": {
+      "name": "Lane Change Assist (IPMA) Enable",
+      "desc": "Enables MFCLKS LKAlert+LKAid+LCWA lane change assist features in IPMA module."
+    },
+    "inLaneRepositioning": {
+      "name": "In-Lane Repositioning (FeatureCfg IACCMode) Enable",
+      "desc": "Repositions truck away from adjacent semi trucks within the lane (FCIACCM Preview+CurveControl)."
+    },
+    "laneBiasingPredictiveSpeed": {
+      "name": "APIM Lane Biasing & Predictive Speed Assist",
+      "desc": "Enables Lane Biasing and Predictive Speed Assist under Cruise Control in Sync APIM."
+    },
+    "apimLaneChangeAssist": {
+      "name": "APIM Lane Change Assist",
+      "desc": "Enables Lane Change Assist under Cruise Control in Sync APIM."
+    },
+    "ipmaModuleFeatureCfgAlbAlc": {
+      "name": "IPMA Module Feature Cfg (ALB & ALC)",
+      "desc": "Enables ModuleFeatureCfg_ALB (MFCALB) & ModuleFeatureCfg_ALC (MFCALC) in IPMA."
+    },
+    "ipmaCustomerSettingAlbAlc": {
+      "name": "IPMA Customer Setting ALB & ALC Vehicle Selection",
+      "desc": "Enables CustomerSetting_ALBSelected_Vehicle (CSALBSV) & CustomerSetting_ALCSelected_Vehicle (CSALCSV) in IPMA."
+    },
+    "bambiMode": {
+      "name": "Bambi Mode (Fog + High Beams)",
+      "desc": "Keeps front fog lights illuminated when high beams are engaged."
+    },
+    "turnSignalTap5": {
+      "name": "Lane Change Tap Count (5 Flashes)",
+      "desc": "Increases soft-tap turn signal blink count from 3 to 5 flashes."
+    },
+    "secureIdle": {
+      "name": "Secure / Police Idle",
+      "desc": "Prevents shifting out of Park if key fob is missing from running vehicle."
+    },
+    "globalWindows": {
+      "name": "Global Window Open / Close",
+      "desc": "Opens/closes front windows by holding lock/unlock buttons on key fob."
+    },
+    "beltminderChime": {
+      "name": "Beltminder Audio Chime Removal",
+      "desc": "Removes seatbelt warning audio chime for front seats."
+    },
+    "fakeEngineSound": {
+      "name": "Fake Engine Sound (ANC/ESE) Removal",
+      "desc": "Removes simulated engine sound synthesized through cabin speakers."
+    },
+    "offroadScreen": {
+      "name": "Off-Road & Pitch/Roll Screen Enable",
+      "desc": "Displays 4x4 off-road status, pitch, roll, and steering angle gauges on Sync 4 screen."
+    }
+  },
+  "appSettings": {
+    "displayTitle": "Display",
+    "behaviorTitle": "Behavior",
+    "telemetryRate": "Telemetry Rate",
+    "telemetryRateDesc": "Adjust how frequently live vehicle telemetry PIDs are polled"
+  },
+  "modulesPage": {
+    "modulesTab": "Modules",
+    "configureTab": "Configure"
+  },
+  "safety": {
+    "backupAlert": "Target line hex will be backed up automatically prior to writing.",
+    "writeConfirmed": "Configuration written and verified successfully.",
+    "writeFailed": "Write operation failed. Target line configuration intact."
+  },
+  "history": {
+    "title": "Line Hex History",
+    "restore": "Restore",
+    "empty": "No history snapshots saved for this line yet.",
+    "restoreSuccess": "Target line hex restored successfully.",
+    "restoreError": "Failed to restore target line hex."
+  }
+}

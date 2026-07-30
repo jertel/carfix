@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
+# Clean up broken wrapper jar if invalid (< 10KB or fails java execution)
+if [ -f "$DIR/gradle/wrapper/gradle-wrapper.jar" ]; then
+    SIZE=$(wc -c < "$DIR/gradle/wrapper/gradle-wrapper.jar" 2>/dev/null || echo 0)
+    if [ "$SIZE" -lt 10000 ] || ! java -jar "$DIR/gradle/wrapper/gradle-wrapper.jar" --version >/dev/null 2>&1; then
+        rm -f "$DIR/gradle/wrapper/gradle-wrapper.jar"
+    fi
+fi
+
+# Attempt to download official Gradle wrapper JAR if missing
+if [ ! -f "$DIR/gradle/wrapper/gradle-wrapper.jar" ]; then
+    mkdir -p "$DIR/gradle/wrapper"
+    WRAPPER_URL="https://repo1.maven.org/maven2/org/gradle/gradle-wrapper/8.7/gradle-wrapper-8.7.jar"
+    if command -v curl >/dev/null 2>&1; then
+        curl -sSL -o "$DIR/gradle/wrapper/gradle-wrapper.jar" "$WRAPPER_URL" 2>/dev/null
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q -O "$DIR/gradle/wrapper/gradle-wrapper.jar" "$WRAPPER_URL" 2>/dev/null
+    fi
+fi
+
+# 1. Check valid project gradle-wrapper.jar
+if [ -f "$DIR/gradle/wrapper/gradle-wrapper.jar" ] && java -jar "$DIR/gradle/wrapper/gradle-wrapper.jar" --version >/dev/null 2>&1; then
+    exec java -jar "$DIR/gradle/wrapper/gradle-wrapper.jar" "$@"
+fi
+
+# 2. Check user cached valid gradle-wrapper jars in ~/.gradle and restore
+CACHED_JAR=""
+if [ -d "$HOME/.gradle" ]; then
+    while IFS= read -r candidate; do
+        if java -jar "$candidate" --version >/dev/null 2>&1; then
+            CACHED_JAR="$candidate"
+            break
+        fi
+    done < <(find "$HOME/.gradle" -name "gradle-wrapper.jar" -size +10k 2>/dev/null)
+fi
+
+if [ -n "$CACHED_JAR" ] && [ -f "$CACHED_JAR" ]; then
+    mkdir -p "$DIR/gradle/wrapper"
+    cp "$CACHED_JAR" "$DIR/gradle/wrapper/gradle-wrapper.jar"
+    exec java -jar "$DIR/gradle/wrapper/gradle-wrapper.jar" "$@"
+fi
+
+# 3. Check system gradle in PATH
+if command -v gradle >/dev/null 2>&1; then
+    exec gradle "$@"
+fi
+
+# 4. Check Android Studio bundled Gradle
+if [ -d "/opt/android-studio/plugins/gradle/lib" ]; then
+    java -cp "/opt/android-studio/plugins/gradle/lib/*" org.gradle.launcher.Main "$@" 2>/dev/null && exit 0
+    java -cp "/opt/android-studio/plugins/gradle/lib/*" org.gradle.launcher.GradleMain "$@" 2>/dev/null && exit 0
+fi
+
+# 5. Check system installed gradle jars in /usr/share/gradle/lib
+if [ -d "/usr/share/gradle/lib" ]; then
+    java -cp "/usr/share/gradle/lib/*" org.gradle.launcher.Main "$@" 2>/dev/null && exit 0
+    java -cp "/usr/share/gradle/lib/*" org.gradle.launcher.GradleMain "$@" 2>/dev/null && exit 0
+fi
+
+echo "ERROR: Could not run Gradle." >&2
+echo "Please install Gradle on your system (e.g. 'sudo apt install gradle') or download a Gradle wrapper JAR." >&2
+exit 1

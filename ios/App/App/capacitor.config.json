@@ -1,0 +1,10 @@
+{
+	"appId": "com.carfix",
+	"appName": "carfix",
+	"webDir": "dist",
+	"packageClassList": [
+		"FilesystemPlugin",
+		"PreferencesPlugin",
+		"SharePlugin"
+	]
+}
