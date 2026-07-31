@@ -4,7 +4,7 @@ import { useCarFixStore } from '../../src/stores/carfixStore';
 import { backupManager } from '../../src/core/safety/backupManager';
 import { IVehicleOption } from '../../src/core/types/module';
 
-describe('Ad-Hoc Options Expansion & History Star Unit Tests', () => {
+describe('Ad-Hoc Options Read Button & History Star Unit Tests', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
   });
@@ -43,7 +43,7 @@ describe('Ad-Hoc Options Expansion & History Star Unit Tests', () => {
     expect(hasHistory(testOption)).toBe(true);
   });
 
-  it('should trigger Extended Diagnostics warning prompt when expanding unread option', async () => {
+  it('should NOT prompt when item is expanded, but prompt when Read button is clicked for unread option', async () => {
     const store = useCarFixStore();
     store.isConnected = true;
     store.connectedVin = '1FTFW1ED4MF123456';
@@ -55,14 +55,25 @@ describe('Ad-Hoc Options Expansion & History Star Unit Tests', () => {
       return !!(store.moduleData[opt.targetAddress] && store.moduleData[opt.targetAddress] !== 'NO DATA');
     };
 
-    const onOptionExpand = (opt: IVehicleOption) => {
+    // Expanding item does nothing to trigger prompt
+    const onOptionExpand = () => {
+      // Just expands accordion, no auto-read call
+    };
+
+    const onOptionRead = (opt: IVehicleOption) => {
       if (!isOptionRead(opt) && store.isConnected && store.isVinMatched && !store.isEngineRunning) {
         pendingOpt = opt;
         store.showExtDiagPrompt = true;
       }
     };
 
-    onOptionExpand(testOption);
+    // Simulate expansion
+    onOptionExpand();
+    expect(store.showExtDiagPrompt).toBe(false);
+    expect(pendingOpt).toBeNull();
+
+    // Simulate user clicking Read button
+    onOptionRead(testOption);
     expect(store.showExtDiagPrompt).toBe(true);
     expect(pendingOpt).toBe(testOption);
 

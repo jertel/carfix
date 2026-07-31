@@ -266,7 +266,6 @@
                               group="sub-options-group"
                               header-class="q-py-xs q-px-sm"
                               :aria-label="getOptionTitle(subOpt)"
-                              @show="onOptionExpand(subOpt)"
                             >
                               <template #header>
                                 <q-item-section class="col">
@@ -312,6 +311,11 @@
                                   {{ getOptionDescription(subOpt) }}
                                 </div>
 
+                                <div v-if="!store.isOptionFirmwareSatisfied(subOpt)" class="q-mb-sm q-pa-xs rounded-borders bg-warning text-dark text-caption row items-center q-gutter-x-xs font-sans">
+                                  <q-icon name="warning" color="dark" size="16px" class="shrink-0" />
+                                  <span>Firmware requirement unmet: {{ store.getOptionFirmwareMissingReason(subOpt) }}</span>
+                                </div>
+
                                 <div v-if="store.optionLoadingMap[subOpt.id]" class="row items-center q-gutter-x-sm text-caption text-primary q-py-sm">
                                   <q-spinner-dots size="20px" color="primary" />
                                   <span class="text-italic font-mono">Reading setting from vehicle ECU...</span>
@@ -329,6 +333,7 @@
                                         </div>
 
                                         <q-btn
+                                          v-if="store.isOptionFirmwareSatisfied(subOpt)"
                                           flat
                                           round
                                           dense
@@ -347,6 +352,7 @@
                                     </div>
 
                                     <q-toggle
+                                      v-if="store.isOptionFirmwareSatisfied(subOpt)"
                                       :model-value="isOptionEnabled(subOpt)"
                                       color="positive"
                                       size="md"
@@ -358,8 +364,7 @@
                                   </div>
                                 </template>
 
-                                <div v-else class="row items-center justify-between q-py-xs">
-                                  <span class="text-caption text-italic text-grey-6">Setting value unread</span>
+                                <div v-else class="row items-center justify-end q-py-xs">
                                   <q-btn
                                     dense
                                     outline
@@ -369,7 +374,7 @@
                                     class="text-caption font-mono"
                                     :loading="store.optionLoadingMap[subOpt.id]"
                                     :disabled="store.isEngineRunning"
-                                    @click="onOptionExpand(subOpt)"
+                                    @click="onOptionRead(subOpt)"
                                   />
                                 </div>
                               </q-card-section>
@@ -386,7 +391,6 @@
                       group="standalone-options-group"
                       header-class="q-py-sm q-px-md"
                       :aria-label="getOptionTitle(item)"
-                      @show="onOptionExpand(item)"
                     >
                       <template #header>
                         <q-item-section class="col">
@@ -432,6 +436,11 @@
                           {{ getOptionDescription(item) }}
                         </div>
 
+                        <div v-if="!store.isOptionFirmwareSatisfied(item)" class="q-mb-sm q-pa-xs rounded-borders bg-warning text-dark text-caption row items-center q-gutter-x-xs font-sans">
+                          <q-icon name="warning" color="dark" size="16px" class="shrink-0" />
+                          <span>Firmware requirement unmet: {{ store.getOptionFirmwareMissingReason(item) }}</span>
+                        </div>
+
                         <div v-if="store.optionLoadingMap[item.id]" class="row items-center q-gutter-x-sm text-caption text-primary q-py-sm">
                           <q-spinner-dots size="20px" color="primary" />
                           <span class="text-italic font-mono">Reading setting from vehicle ECU...</span>
@@ -449,6 +458,7 @@
                                 </div>
 
                                 <q-btn
+                                  v-if="store.isOptionFirmwareSatisfied(item)"
                                   flat
                                   round
                                   dense
@@ -467,6 +477,7 @@
                             </div>
 
                             <q-toggle
+                              v-if="store.isOptionFirmwareSatisfied(item)"
                               :model-value="isOptionEnabled(item)"
                               color="positive"
                               size="md"
@@ -478,8 +489,7 @@
                           </div>
                         </template>
 
-                        <div v-else class="row items-center justify-between q-py-xs">
-                          <span class="text-caption text-italic text-grey-6">Setting value unread</span>
+                        <div v-else class="row items-center justify-end q-py-xs">
                           <q-btn
                             dense
                             outline
@@ -489,7 +499,7 @@
                             class="text-caption font-mono"
                             :loading="store.optionLoadingMap[item.id]"
                             :disabled="store.isEngineRunning"
-                            @click="onOptionExpand(item)"
+                            @click="onOptionRead(item)"
                           />
                         </div>
                       </q-card-section>
@@ -573,6 +583,7 @@
         <ExtDiagConfirmationDialog
           v-model="store.showExtDiagPrompt"
           @confirm="onExtDiagConfirmed"
+          @cancel="onExtDiagCancelled"
         />
       </div>
     </div>
@@ -710,15 +721,30 @@ const groupedAndSortedOptions = computed(() => {
 
   const groupItems: any[] = [];
   groupsMap.forEach((groupOpts, groupName) => {
+    const sortedGroupOpts = [...groupOpts].sort((a, b) =>
+      getOptionTitle(a).localeCompare(getOptionTitle(b), undefined, { numeric: true, sensitivity: 'base' })
+    );
     groupItems.push({
       id: `group_${groupName}`,
       isGroup: true,
       groupName,
-      options: groupOpts
+      options: sortedGroupOpts
     });
   });
 
-  return [...groupItems, ...standaloneOpts];
+  const getItemTitle = (item: any): string => {
+    if (item.isGroup) {
+      return item.groupName;
+    }
+    return getOptionTitle(item);
+  };
+
+  const combinedList = [...groupItems, ...standaloneOpts];
+  combinedList.sort((a, b) =>
+    getItemTitle(a).localeCompare(getItemTitle(b), undefined, { numeric: true, sensitivity: 'base' })
+  );
+
+  return combinedList;
 });
 
 function getGroupHistoryState(groupItem: any): 'ALL' | 'SOME' | 'NONE' {
@@ -754,12 +780,22 @@ function hasHistory(option: IVehicleOption): boolean {
   return backupManager.getLineHistory(option.targetAddress).length > 0;
 }
 
-async function onOptionExpand(opt?: IVehicleOption) {
+async function onOptionRead(opt?: IVehicleOption) {
   if (!store.isConnected || !opt) return;
   if (isOptionRead(opt)) return;
 
+  if (store.isEngineRunning) {
+    $q.notify({
+      type: 'warning',
+      message: t('options.engineRunningBanner'),
+      icon: 'warning',
+      timeout: 4000
+    });
+    return;
+  }
+
   if (!store.hasConfirmedExtDiag) {
-    store.requestOptionsRefresh(opt);
+    await store.requestOptionsRefresh(opt);
     return;
   }
 
@@ -770,14 +806,29 @@ async function onExtDiagConfirmed() {
   await store.confirmOptionsRefresh();
 }
 
+function onExtDiagCancelled() {
+  store.cancelOptionsRefresh();
+}
+
 function requestOptionToggle(option: IVehicleOption, enable: boolean) {
   if (!store.isVinMatched) return;
+  if (!store.isOptionFirmwareSatisfied(option)) {
+    $q.notify({
+      type: 'negative',
+      message: 'Firmware Requirement Unmet',
+      caption: store.getOptionFirmwareMissingReason(option),
+      icon: 'error',
+      timeout: 5000
+    });
+    return;
+  }
   selectedOption.value = option;
   selectedTargetState.value = enable;
   isChallengeOpen.value = true;
 }
 
 function openHistory(option: IVehicleOption) {
+  if (!store.isOptionFirmwareSatisfied(option)) return;
   historyOption.value = option;
   isHistoryDialogOpen.value = true;
 }
@@ -813,6 +864,10 @@ async function onChallengeAuthorized() {
 }
 
 function getOptionTitle(option: IVehicleOption): string {
+  if (option.nameKey) {
+    const translated = t(option.nameKey);
+    if (translated !== option.nameKey) return translated;
+  }
   const keyMap: Record<string, string> = {
     'f150_double_horn_honk': 'option.double_horn',
     'f150_enable_lane_change_assist': 'option.lane_change',
@@ -832,6 +887,10 @@ function getOptionTitle(option: IVehicleOption): string {
 }
 
 function getOptionDescription(option: IVehicleOption): string {
+  if (option.descriptionKey) {
+    const translated = t(option.descriptionKey);
+    if (translated !== option.descriptionKey) return translated;
+  }
   const keyMap: Record<string, string> = {
     'f150_double_horn_honk': 'option.double_horn_desc',
     'f150_enable_lane_change_assist': 'option.lane_change_desc',
@@ -847,7 +906,7 @@ function getOptionDescription(option: IVehicleOption): string {
     const translated = t(translationKey);
     if (translated !== translationKey) return translated;
   }
-  return option.description || option.descriptionKey;
+  return option.description || option.descriptionKey || '';
 }
 </script>
 

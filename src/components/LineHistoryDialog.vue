@@ -24,28 +24,61 @@
           <div
             v-for="(entry, index) in historyEntries"
             :key="index"
-            class="q-pa-sm carfix-code-block rounded-borders row items-center justify-between no-wrap"
+            class="q-pa-sm carfix-code-block rounded-borders cursor-pointer"
+            tabindex="0"
+            role="button"
+            :aria-expanded="isExpanded(index)"
+            @click="toggleExpand(index)"
+            @keyup.enter="toggleExpand(index)"
           >
-            <div class="col">
-              <div class="text-caption text-grey-7 dark:text-grey-4 text-weight-medium">
-                {{ formatDateTime(entry.timestampISO) }}
+            <div class="row items-center justify-between no-wrap">
+              <div class="col">
+                <div class="text-caption text-grey-7 dark:text-grey-4 text-weight-medium row items-center q-gutter-x-2xs">
+                  <span>{{ formatDateTime(entry.timestampISO) }}</span>
+                  <q-icon
+                    :name="isExpanded(index) ? 'expand_less' : 'expand_more'"
+                    size="16px"
+                    class="text-grey-6"
+                  />
+                </div>
+                <div class="text-caption font-mono text-weight-bold text-primary q-mt-2xs hex-wrap">
+                  {{ entry.hexValue }}
+                </div>
               </div>
-              <div class="text-caption font-mono text-weight-bold text-primary q-mt-2xs hex-wrap">
-                {{ entry.hexValue }}
-              </div>
+
+              <q-btn
+                flat
+                dense
+                size="sm"
+                color="primary"
+                icon="restore"
+                :label="t('history.restore')"
+                :aria-label="`Restore hex ${entry.hexValue} for ${option?.targetAddress}`"
+                :disable="store.isWriting || !store.isConnected || !store.isVinMatched"
+                @click.stop="requestRestoreEntry(entry.hexValue)"
+              />
             </div>
 
-            <q-btn
-              flat
-              dense
-              size="sm"
-              color="primary"
-              icon="restore"
-              :label="t('history.restore')"
-              :aria-label="`Restore hex ${entry.hexValue} for ${option?.targetAddress}`"
-              :disable="store.isWriting || !store.isConnected || !store.isVinMatched"
-              @click="requestRestoreEntry(entry.hexValue)"
-            />
+            <!-- Expanded Block Lines View -->
+            <div v-if="isExpanded(index)" class="q-mt-xs q-pt-xs border-top-grey q-gutter-y-2xs">
+              <div class="text-caption text-grey-6 dark:text-grey-4 text-weight-bold q-mb-2xs">
+                {{ t('history.blockLinesTitle') || 'Block Lines:' }}
+              </div>
+              <div v-if="entry.blockLines && entry.blockLines.length > 0" class="q-gutter-y-2xs">
+                <div
+                  v-for="bLine in entry.blockLines"
+                  :key="bLine.address"
+                  class="row items-center justify-between text-caption font-mono"
+                  :class="{ 'text-weight-bold text-primary': bLine.address === option?.targetAddress }"
+                >
+                  <span>{{ bLine.address }}:</span>
+                  <span>{{ bLine.hexValue }}</span>
+                </div>
+              </div>
+              <div v-else class="text-caption font-mono text-grey-6 dark:text-grey-4">
+                <span>{{ option?.targetAddress }}:</span> <span>{{ entry.hexValue }}</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -91,11 +124,24 @@ const store = useCarFixStore();
 const $q = useQuasar();
 const isChallengeOpen = ref(false);
 const selectedRestoreHex = ref('');
+const expandedIndexes = ref<Set<number>>(new Set());
 
 const historyEntries = computed(() => {
   if (!props.option) return [];
   return backupManager.getLineHistory(props.option.targetAddress);
 });
+
+function isExpanded(index: number): boolean {
+  return expandedIndexes.value.has(index);
+}
+
+function toggleExpand(index: number) {
+  if (expandedIndexes.value.has(index)) {
+    expandedIndexes.value.delete(index);
+  } else {
+    expandedIndexes.value.add(index);
+  }
+}
 
 function formatDateTime(iso: string): string {
   return formatLocalizedDateTime(iso, 'en-US', getSystemTimezone());
@@ -148,5 +194,9 @@ async function onRestoreAuthorized() {
 
 .font-mono {
   font-family: monospace, SFMono-Regular, Consolas, 'Liberation Mono', Menlo;
+}
+
+.border-top-grey {
+  border-top: 1px dashed rgba(128, 128, 128, 0.3);
 }
 </style>

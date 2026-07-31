@@ -136,12 +136,14 @@ export class ObdBridge {
       else if (cmd === 'ATZ') res = 'ELM327 v2.2 / STN2255 OBDLink MX+';
       else if (cmd === '0902') {
         res = '49 02 01 00 00 00 31 49 02 02 46 54 46 57 31 45 44 34 4D 46 31 32 33 34 35 36';
-      } else if (cmd.startsWith('22')) {
-        const did = cmd.substring(2);
+      } else if (cmd.replace(/\s+/g, '').startsWith('22')) {
+        const cleanCmd = cmd.replace(/\s+/g, '');
+        const did = cleanCmd.substring(2);
         if (did === 'F113') res = '706 10 62 F1 13 4D 4C 33 54 2D 31 34 47 36 34 37 2D 41 42'; // ML3T-14G647-AB
         else res = `${this.currentHeader} 07 62 ${did} 04 01 01 00 00 98`;
-      } else if (cmd.startsWith('2E')) {
-        res = `${this.currentHeader} 03 6E ${cmd.substring(2, 6)}`;
+      } else if (cmd.startsWith('STPX') || cmd.replace(/\s+/g, '').startsWith('2E')) {
+        const cleanCmd = cmd.replace(/.*D:\s*/i, '').replace(/\s+/g, '');
+        res = `${this.currentHeader} 03 6E ${cleanCmd.substring(2, 6)}`;
       } else if (cmd.startsWith('10') || cmd.startsWith('11')) {
         res = 'OK';
       } else {

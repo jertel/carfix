@@ -4,9 +4,9 @@ import { obdBridge } from '../../src/core/obd/obdBridge';
 import { udsClient } from '../../src/core/obd/udsClient';
 
 describe('Ford F-150 Gen 14 Vehicle Module', () => {
-  it('should list catalog options including all 6 Bluecruise 1.4 options', () => {
+  it('should list catalog options including all Bluecruise 1.4 and APIM options', () => {
     const catalog = fordF150Gen14Module.optionsCatalog;
-    expect(catalog.length).toBe(12);
+    expect(catalog.length).toBe(19);
 
     const ids = catalog.map(opt => opt.id);
     expect(ids).toContain('f150_double_horn_honk');
@@ -17,6 +17,13 @@ describe('Ford F-150 Gen 14 Vehicle Module', () => {
     expect(ids).toContain('f150_ipma_module_feature_cfg_alb_alc');
     expect(ids).toContain('f150_ipma_customer_setting_alb_alc_selected');
     expect(ids).toContain('f150_bambi_mode_fog_high_beam');
+    expect(ids).toContain('f150_75th_anniversary_splash_screen');
+    expect(ids).toContain('f150_unreal_sync_theme');
+    expect(ids).toContain('f150_climate_bar_non_hybrid');
+    expect(ids).toContain('f150_climate_bar_hybrid');
+    expect(ids).toContain('f150_climate_bar_heated_cooled_seats');
+    expect(ids).toContain('f150_lightning_splash_screen');
+    expect(ids).toContain('f150_oil_life_sync_settings');
 
     // Verify IPMA minVersion requirement is RJ6T-14H102-ACJ across all BlueCruise 1.4 options
     const bcOptions = catalog.filter(opt => opt.id.includes('lane') || opt.id.includes('ipma') || opt.id.includes('bluecruise'));
@@ -148,6 +155,33 @@ describe('Ford F-150 Gen 14 Vehicle Module', () => {
     readDidSpy.mockRestore();
   });
 
+  it('should write UDS payload without per-line checksums (NRC 0x13 fix) in connected mode', async () => {
+    // Simulate: read returns 10 bytes for DID DE3E (2 lines of 5 bytes each)
+    // ECU response: 62 DE 3E 04 01 00 01 03 00 01 01 01 01 (multi-frame assembled)
+    const mockReadResponse = '72E 10 0D 62 DE 3E 04 01 00\n72E 21 01 03 00 01 01 01 01';
+    const isSimSpy = vi.spyOn(obdBridge, 'isSimulationMode').mockReturnValue(false);
+    const isConnSpy = vi.spyOn(obdBridge, 'isConnected').mockReturnValue(true);
+    const setHeaderSpy = vi.spyOn(obdBridge, 'setHeader').mockResolvedValue(true);
+    const setSessSpy = vi.spyOn(udsClient, 'setDiagnosticSession').mockResolvedValue(true);
+    const readDidSpy = vi.spyOn(udsClient, 'readDataByIdentifier').mockResolvedValue(mockReadResponse);
+    const writeDidSpy = vi.spyOn(udsClient, 'writeDataByIdentifier').mockResolvedValue(true);
+
+    const option = fordF150Gen14Module.optionsCatalog.find(opt => opt.id === 'f150_double_horn_honk')!;
+    const result = await fordF150Gen14Module.writeOption(option, false);
+
+    expect(result.success).toBe(true);
+    // The write payload must be 20 hex chars (10 raw data bytes), NOT 24 (which would include 2 per-line checksums)
+    const [, payloadHex] = writeDidSpy.mock.calls[0];
+    expect(payloadHex.replace(/\s+/g, '').length).toBe(20);
+
+    isSimSpy.mockRestore();
+    isConnSpy.mockRestore();
+    setHeaderSpy.mockRestore();
+    setSessSpy.mockRestore();
+    readDidSpy.mockRestore();
+    writeDidSpy.mockRestore();
+  });
+
   it('should batch read option lines in connected mode issuing setDiagnosticSession once per module', async () => {
     const isSimSpy = vi.spyOn(obdBridge, 'isSimulationMode').mockReturnValue(false);
     const isConnSpy = vi.spyOn(obdBridge, 'isConnected').mockReturnValue(true);
@@ -169,6 +203,49 @@ describe('Ford F-150 Gen 14 Vehicle Module', () => {
     setHeaderSpy.mockRestore();
     setSessSpy.mockRestore();
     readDidSpy.mockRestore();
+  });
+
+  it('should return satisfied=false for IPMA option when IPMA simulated firmware is RJ6T-14H102-ABS', async () => {
+    const ipmaOption = fordF150Gen14Module.optionsCatalog.find(opt => opt.id === 'f150_enable_lane_change_assist')!;
+    expect(ipmaOption).toBeDefined();
+
+    const prereqResult = await fordF150Gen14Module.checkFirmwarePrerequisites!(ipmaOption);
+    expect(prereqResult.satisfied).toBe(false);
+    expect(prereqResult.missing.length).toBeGreaterThan(0);
+    expect(prereqResult.missing[0]).toContain('Installed: RJ6T-14H102-ABS, Required: RJ6T-14H102-ACJ');
+  });
+
+  it('should correctly configure APIM options with expected target addresses and masks', () => {
+    const catalog = fordF150Gen14Module.optionsCatalog;
+
+    const anniv75 = catalog.find(o => o.id === 'f150_75th_anniversary_splash_screen')!;
+    expect(anniv75.targetAddress).toBe('7D0-03-01');
+    expect(anniv75.mask).toBe('xxxx 24xx xx--');
+
+    const unreal = catalog.find(o => o.id === 'f150_unreal_sync_theme')!;
+    expect(unreal.targetAddress).toBe('7D0-02-03');
+    expect(unreal.mask).toBe('xxxx xxx1 xx--');
+
+    const climateNonHybrid = catalog.find(o => o.id === 'f150_climate_bar_non_hybrid')!;
+    expect(climateNonHybrid.targetAddress).toBe('7D0-02-02');
+    expect(climateNonHybrid.mask).toBe('xxx2 xxxx xx--');
+
+    const climateHybrid = catalog.find(o => o.id === 'f150_climate_bar_hybrid')!;
+    expect(climateHybrid.targetAddress).toBe('7D0-02-02');
+    expect(climateHybrid.mask).toBe('xxx6 xxxx xx--');
+
+    const heatedCooledSeats = catalog.find(o => o.id === 'f150_climate_bar_heated_cooled_seats')!;
+    expect(heatedCooledSeats.targetAddress).toBe('7D0-02-01');
+    expect(heatedCooledSeats.mask).toBe('xxxx xAxx xx--');
+
+    const lightningSplash = catalog.find(o => o.id === 'f150_lightning_splash_screen')!;
+    expect(lightningSplash.targetAddress).toBe('7D0-03-01');
+    expect(lightningSplash.mask).toBe('xxxx 1Fxx xx--');
+
+    const oilLife = catalog.find(o => o.id === 'f150_oil_life_sync_settings')!;
+    expect(oilLife.targetAddress).toBe('7D0-10-01');
+    expect(oilLife.mask).toBe('x8xx xxxx xx--');
+    expect(oilLife.bitValues).toEqual([{ 3: 1 }]);
   });
 });
 

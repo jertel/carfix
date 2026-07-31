@@ -113,4 +113,19 @@ describe('Hex ASCII Converter & OBD Response Parser', () => {
     expect(formatted).not.toBe('NO DATA');
     expect(formatted).toMatch(/^[0-9A-F]{4}$/);
   });
+
+  it('should format multi-line UDS raw payload bytes into separate 5-byte data + 1-byte calculated checksum lines', () => {
+    // 10 raw payload bytes from UDS DID DE3E read: 04 01 00 01 03 00 01 01 01 01
+    const rawPayload = [0x04, 0x01, 0x00, 0x01, 0x03, 0x00, 0x01, 0x01, 0x01, 0x01];
+    const line1Hex = formatAsBuiltLineHex('726-63-01', rawPayload);
+    const line2Hex = formatAsBuiltLineHex('726-63-02', rawPayload);
+
+    // Line 1 data must be 0401000103 + calculated checksum (2 hex chars)
+    expect(line1Hex.replace(/\s+/g, '').substring(0, 10)).toBe('0401000103');
+    expect(line1Hex.replace(/\s+/g, '').length).toBe(12);
+
+    // Line 2 data must be 0001010101 + calculated checksum (2 hex chars)
+    expect(line2Hex.replace(/\s+/g, '').substring(0, 10)).toBe('0001010101');
+    expect(line2Hex.replace(/\s+/g, '').length).toBe(12);
+  });
 });

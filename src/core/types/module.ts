@@ -70,10 +70,17 @@ export interface IWriteResult {
   timestampISO: string;
 }
 
-export interface ILineHistoryEntry {
-  timestampISO: string;
+export interface IBlockLine {
+  address: string;
   hexValue: string;
 }
 
+export interface ILineHistoryEntry {
+  timestampISO: string;
+  hexValue: string;
+  blockLines?: IBlockLine[];
+}
+
 export type ILineHistoryMap = Record<string, ILineHistoryEntry[]>;
+
 

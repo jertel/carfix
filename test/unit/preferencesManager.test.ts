@@ -49,4 +49,56 @@ describe('Capacitor Preferences Manager', () => {
     allBackups = await preferencesManager.loadAllBackupPayloads();
     expect(allBackups.length).toBe(0);
   });
+
+  it('should save and load dark theme preference', async () => {
+    expect(await preferencesManager.loadDarkThemePref()).toBeNull();
+
+    await preferencesManager.saveDarkThemePref(true);
+    expect(await preferencesManager.loadDarkThemePref()).toBe(true);
+
+    await preferencesManager.saveDarkThemePref(false);
+    expect(await preferencesManager.loadDarkThemePref()).toBe(false);
+  });
+
+  it('should save and load compact dashboard mode preference', async () => {
+    expect(await preferencesManager.loadCompactDashboardModePref()).toBe(false);
+
+    await preferencesManager.saveCompactDashboardModePref(true);
+    expect(await preferencesManager.loadCompactDashboardModePref()).toBe(true);
+  });
+
+  it('should save and load telemetry rate preference', async () => {
+    expect(await preferencesManager.loadTelemetryRatePref()).toBe(1);
+
+    await preferencesManager.saveTelemetryRatePref(5);
+    expect(await preferencesManager.loadTelemetryRatePref()).toBe(5);
+  });
+
+  it('should save and load options sub-tab preference', async () => {
+    expect(await preferencesManager.loadOptionsSubTabPref()).toBe('display');
+
+    await preferencesManager.saveOptionsSubTabPref('behavior');
+    expect(await preferencesManager.loadOptionsSubTabPref()).toBe('behavior');
+  });
+
+  it('should default auto-connect to false and persist changes', async () => {
+    expect(await preferencesManager.loadAutoConnectPref()).toBe(false);
+
+    await preferencesManager.saveAutoConnectPref(true);
+    expect(await preferencesManager.loadAutoConnectPref()).toBe(true);
+
+    await preferencesManager.saveAutoConnectPref(false);
+    expect(await preferencesManager.loadAutoConnectPref()).toBe(false);
+  });
+
+  it('should default auto-reconnect to false and persist changes', async () => {
+    expect(await preferencesManager.loadAutoReconnectPref()).toBe(false);
+
+    await preferencesManager.saveAutoReconnectPref(true);
+    expect(await preferencesManager.loadAutoReconnectPref()).toBe(true);
+
+    await preferencesManager.saveAutoReconnectPref(false);
+    expect(await preferencesManager.loadAutoReconnectPref()).toBe(false);
+  });
 });
+

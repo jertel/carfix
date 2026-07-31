@@ -1,4 +1,4 @@
-import { ILineHistoryEntry, ILineHistoryMap } from '../types/module';
+import { ILineHistoryEntry, ILineHistoryMap, IBlockLine } from '../types/module';
 import { preferencesManager } from '../storage/preferencesManager';
 
 /**
@@ -12,12 +12,13 @@ export class BackupManager {
    * Records a line hex value snapshot before modification.
    * Prevents consecutive duplicate hex entries for the same line.
    */
-  public recordLineBackup(targetAddress: string, hexValue: string): ILineHistoryEntry {
+  public recordLineBackup(targetAddress: string, hexValue: string, blockLines?: IBlockLine[]): ILineHistoryEntry {
     const timestampISO = new Date().toISOString();
     const cleanAddress = targetAddress.trim().toUpperCase();
     const entry: ILineHistoryEntry = {
       timestampISO,
-      hexValue: hexValue.trim()
+      hexValue: hexValue.trim(),
+      blockLines: blockLines && blockLines.length > 0 ? blockLines : undefined
     };
 
     if (!this.lineHistoryMap[cleanAddress]) {

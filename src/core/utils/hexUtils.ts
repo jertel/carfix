@@ -25,12 +25,7 @@ export function formatAsBuiltLineHex(address: string, payloadBytes: number[]): s
 
   const dataHex = dataBytes.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join('');
 
-  let checksumHex = '';
-  if (payloadBytes.length >= startIndex + dataBytes.length + 1) {
-    checksumHex = payloadBytes[startIndex + dataBytes.length].toString(16).padStart(2, '0').toUpperCase();
-  } else {
-    checksumHex = calculateFordChecksum(address, dataHex);
-  }
+  const checksumHex = calculateFordChecksum(address, dataHex);
 
   const fullHex = dataHex + checksumHex;
   return fullHex.match(/.{1,4}/g)?.join(' ') || fullHex;

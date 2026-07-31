@@ -37,6 +37,11 @@
       v-model="store.showTransmitPreview"
       :transmit-info="store.lastSimulatedTransmit"
     />
+    <!-- Version-Aware Disclaimer Agreement Modal -->
+    <DisclaimerDialog
+      v-model="store.showDisclaimerModal"
+      @agree="store.acceptDisclaimer()"
+    />
   </q-layout>
 </template>
 
@@ -46,10 +51,13 @@ import { useQuasar } from 'quasar';
 import { useCarFixStore } from './stores/carfixStore';
 import AppHeader from './components/AppHeader.vue';
 import TransmitPreviewDialog from './components/TransmitPreviewDialog.vue';
+import DisclaimerDialog from './components/DisclaimerDialog.vue';
 import ConnectPage from './pages/ConnectPage.vue';
 import PidDashboardPage from './pages/PidDashboardPage.vue';
 import ModuleOptionsPage from './pages/ModuleOptionsPage.vue';
 import ModulesPage from './pages/ModulesPage.vue';
+
+import { preferencesManager } from './core/storage/preferencesManager';
 
 const $q = useQuasar();
 const store = useCarFixStore();
@@ -63,9 +71,23 @@ function handleSwipe(details: { direction: 'left' | 'right' | 'up' | 'down' }) {
 }
 
 onMounted(async () => {
-  $q.dark.set('auto');
+  const savedDarkTheme = await preferencesManager.loadDarkThemePref();
+  if (savedDarkTheme !== null) {
+    $q.dark.set(savedDarkTheme);
+  } else {
+    $q.dark.set('auto');
+  }
   await store.initializeDashboard();
+  if (store.autoConnect && store.selectedDeviceAddress) {
+    try {
+      await store.connectAdapter();
+    } catch {
+      // silently ignore; user can connect manually
+    }
+  }
+
 });
+
 </script>
 
 <style scoped lang="scss">

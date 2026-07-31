@@ -50,19 +50,30 @@ export class UdsClient {
   /**
    * Write Data By Identifier (Service 0x2E)
    */
-  public async writeDataByIdentifier(didHex: string, payloadHex: string): Promise<boolean> {
-    const cleanPayload = payloadHex.replace(/\s+/g, '');
-    const rawCommand = `2E${didHex}${cleanPayload}`;
+  public async writeDataByIdentifier(didHex: string, payloadHex: string, skipSession: boolean = false): Promise<boolean> {
+    const cleanDid = didHex.replace(/\s+/g, '').toUpperCase();
+    const cleanPayload = payloadHex.replace(/\s+/g, '').toUpperCase();
+    const rawCommand = `2E${cleanDid}${cleanPayload}`;
+
+    const formattedCommand = formatRawCommand(rawCommand);
 
     if (this.isWriteDisabled) {
-      console.log(`[TROUBLESHOOTING MODE] Suppressed actual ECU module write for command: ${rawCommand}`);
+      console.log(`[TROUBLESHOOTING MODE] Suppressed actual ECU module write for command: ${formattedCommand}`);
       return true;
     }
 
-    // Ensure Extended Session is active
-    await this.setDiagnosticSession(0x03);
+    // Ensure Extended Session is active unless caller is managing session lifecycle
+    if (!skipSession) {
+      await this.setDiagnosticSession(0x03);
+    }
 
-    const response = await this.bridge.sendCommand(rawCommand);
+    const payloadByteCount = rawCommand.length / 2;
+    // Standard ELM327 command mode only supports single-frame requests (<= 7 bytes).
+    // ISO-TP multi-frame transmit (> 7 bytes) requires STN STPX command with uppercase D:.
+    // H: is omitted because ATSH was already called and the header is inherited.
+    const cmdToTransmit = payloadByteCount > 7 ? `STPX D:${rawCommand}` : rawCommand;
+
+    const response = await this.bridge.sendCommand(cmdToTransmit);
     
     // UDS positive response for 0x2E is 0x6E
     return response.includes('6E') || response.includes('OK');

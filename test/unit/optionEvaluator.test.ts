@@ -52,4 +52,38 @@ describe('Option Evaluator Utility', () => {
     expect(isOptionEnabled(dummyOption, undefined)).toBe(false);
     expect(isOptionEnabled(dummyOption, '')).toBe(false);
   });
+
+  it('should evaluate climate bar non-hybrid (hex 2) and hybrid (hex 6) masks', () => {
+    const nonHybridOpt: IVehicleOption = {
+      id: 'f150_climate_bar_non_hybrid',
+      name: 'Climate Bar Non-Hybrid',
+      description: 'Climate bar non-hybrid',
+      nameKey: 'options.f150.climateBarNonHybrid.name',
+      descriptionKey: 'options.f150.climateBarNonHybrid.description',
+      category: 'CONVENIENCE',
+      primaryModule: '7D0',
+      targetAddress: '7D0-02-02',
+      mask: 'xxx2 xxxx xx--',
+      safetyLevel: 'LOW'
+    };
+
+    const hybridOpt: IVehicleOption = {
+      id: 'f150_climate_bar_hybrid',
+      name: 'Climate Bar Hybrid',
+      description: 'Climate bar hybrid',
+      nameKey: 'options.f150.climateBarHybrid.name',
+      descriptionKey: 'options.f150.climateBarHybrid.description',
+      category: 'CONVENIENCE',
+      primaryModule: '7D0',
+      targetAddress: '7D0-02-02',
+      mask: 'xxx6 xxxx xx--',
+      safetyLevel: 'LOW'
+    };
+
+    expect(isOptionEnabled(nonHybridOpt, '0002 0000 0000')).toBe(true);
+    expect(isOptionEnabled(nonHybridOpt, '0006 0000 0000')).toBe(false);
+
+    expect(isOptionEnabled(hybridOpt, '0006 0000 0000')).toBe(true);
+    expect(isOptionEnabled(hybridOpt, '0002 0000 0000')).toBe(false);
+  });
 });

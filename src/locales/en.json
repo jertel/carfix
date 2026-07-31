@@ -89,6 +89,18 @@
     "restore": "Restore",
     "empty": "No history snapshots saved for this line yet.",
     "restoreSuccess": "Target line hex restored successfully.",
-    "restoreError": "Failed to restore target line hex."
+    "restoreError": "Failed to restore target line hex.",
+    "blockLinesTitle": "Block Lines:"
+  },
+  "disclaimer": {
+    "title": "Disclaimer & Terms of Use",
+    "version": "Version",
+    "noticeHeading": "Notice of Risk & Liability",
+    "noticeBody": "This application communicates directly with vehicle Electronic Control Units (ECUs).",
+    "noticeBodyParagraph2": "MODIFYING VEHICLE CONFIGURATIONS OR WRITING PARAMETERS CARRIES INHERENT RISKS OF VEHICLE COMPONENT MALFUNCTION, LOSS OF WARRANTY, OR UNINTENDED SYSTEM BEHAVIOR.",
+    "noticeBodyParagraph3": "YOU ARE SOLELY RESPONSIBLE FOR ENSURING ALL MODIFICATIONS COMPLY WITH LOCAL SAFETY STANDARDS AND VEHICLE REGULATIONS.",
+    "noticeBodyParagraph4": "THIS APPLICATION AND DEVELOPER OFFER NO GUARANTEE OR WARRANTY OF ANY KIND, EXPRESS OR IMPLIED. USE OF THIS APPLICATION IS ENTIRELY AT YOUR OWN RISK.",
+    "acknowledgment": "By clicking 'I Agree & Continue', you confirm that you have read, understood, and accept full responsibility for operating this application.",
+    "agreeButton": "I Agree & Continue"
   }
 }

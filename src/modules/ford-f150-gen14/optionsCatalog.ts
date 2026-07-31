@@ -215,5 +215,90 @@ export const F150_GEN14_OPTIONS: IVehicleOption[] = [
     mask: 'xxxx x1xx xx--',
     bitValues: [{ 0: 1 }],
     safetyLevel: 'LOW'
+  },
+  {
+    id: 'f150_75th_anniversary_splash_screen',
+    name: '75th Anniversary Splash Screen Enable',
+    description: 'Enables 75th Anniversary boot splash screen on Sync display. Requires Sync version 22012 or higher. Note: APIM reset required.',
+    nameKey: 'options.f150.anniversary75SplashScreen.name',
+    descriptionKey: 'options.f150.anniversary75SplashScreen.description',
+    category: 'CONVENIENCE',
+    primaryModule: '7D0',
+    targetAddress: '7D0-03-01',
+    mask: 'xxxx 24xx xx--',
+    safetyLevel: 'LOW'
+  },
+  {
+    id: 'f150_unreal_sync_theme',
+    name: 'Unreal Sync Theme Enable',
+    description: 'Enables Unreal Engine Sync 4 visual theme on central display.',
+    nameKey: 'options.f150.unrealSyncTheme.name',
+    descriptionKey: 'options.f150.unrealSyncTheme.description',
+    category: 'CONVENIENCE',
+    primaryModule: '7D0',
+    targetAddress: '7D0-02-03',
+    mask: 'xxxx xxx1 xx--',
+    safetyLevel: 'LOW'
+  },
+  {
+    id: 'f150_climate_bar_non_hybrid',
+    name: 'Climate Bar - Non-Hybrid Enable',
+    description: 'Enables climate bar at bottom of Sync screen for non-hybrid models. Requires Unreal Sync Theme.',
+    nameKey: 'options.f150.climateBarNonHybrid.name',
+    descriptionKey: 'options.f150.climateBarNonHybrid.description',
+    category: 'CONVENIENCE',
+    primaryModule: '7D0',
+    targetAddress: '7D0-02-02',
+    mask: 'xxx2 xxxx xx--',
+    safetyLevel: 'LOW'
+  },
+  {
+    id: 'f150_climate_bar_hybrid',
+    name: 'Climate Bar - Hybrid Enable',
+    description: 'Enables climate bar at bottom of Sync screen for hybrid models. Requires Unreal Sync Theme.',
+    nameKey: 'options.f150.climateBarHybrid.name',
+    descriptionKey: 'options.f150.climateBarHybrid.description',
+    category: 'CONVENIENCE',
+    primaryModule: '7D0',
+    targetAddress: '7D0-02-02',
+    mask: 'xxx6 xxxx xx--',
+    safetyLevel: 'LOW'
+  },
+  {
+    id: 'f150_climate_bar_heated_cooled_seats',
+    name: 'Heated & Cooled Seats Climate Bar Enable',
+    description: 'Enables Heated and Cooled Seats buttons on the Sync climate bar.',
+    nameKey: 'options.f150.climateBarHeatedCooledSeats.name',
+    descriptionKey: 'options.f150.climateBarHeatedCooledSeats.description',
+    category: 'CONVENIENCE',
+    primaryModule: '7D0',
+    targetAddress: '7D0-02-01',
+    mask: 'xxxx xAxx xx--',
+    safetyLevel: 'LOW'
+  },
+  {
+    id: 'f150_lightning_splash_screen',
+    name: 'Lightning F-150 Splash Screen Enable',
+    description: 'Enables Lightning F-150 EV boot splash screen on Sync display.',
+    nameKey: 'options.f150.lightningSplashScreen.name',
+    descriptionKey: 'options.f150.lightningSplashScreen.description',
+    category: 'CONVENIENCE',
+    primaryModule: '7D0',
+    targetAddress: '7D0-03-01',
+    mask: 'xxxx 1Fxx xx--',
+    safetyLevel: 'LOW'
+  },
+  {
+    id: 'f150_oil_life_sync_settings',
+    name: 'Oil Life Sync Settings Enable',
+    description: 'Displays Oil Life monitor in Sync Settings > Vehicle menu.',
+    nameKey: 'options.f150.oilLifeSyncSettings.name',
+    descriptionKey: 'options.f150.oilLifeSyncSettings.description',
+    category: 'CONVENIENCE',
+    primaryModule: '7D0',
+    targetAddress: '7D0-10-01',
+    mask: 'x8xx xxxx xx--',
+    bitValues: [{ 3: 1 }],
+    safetyLevel: 'LOW'
   }
 ];

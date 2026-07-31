@@ -83,7 +83,7 @@ export class FordF150Gen14Module implements IVehicleModule {
       '716': { partNumber: 'ML3T-14G650-AA', softwareVersion: 'ML3T-14G651-AB' },
       '724': { partNumber: 'ML3T-14C025-AA' },
       '726': { partNumber: 'ML3T-14G000-AA', softwareVersion: 'ML3T-14G001-AA' },
-      '706': { partNumber: 'RJ6T-14H102-ACJ', softwareVersion: 'RJ6T-14H103-ACJ' },
+      '706': { partNumber: 'RJ6T-14H102-ABS', softwareVersion: 'RJ6T-14H103-ABS' },
       '7B1': { partNumber: 'ML3T-14F017-AB' },
       '720': { partNumber: 'ML3T-10849-AA', softwareVersion: 'ML3T-14C026-AA' },
       '7D0': { partNumber: 'MU5T-14G371-FA', softwareVersion: 'MU5T-14G374-BA' },
@@ -163,11 +163,12 @@ export class FordF150Gen14Module implements IVehicleModule {
     const missing: string[] = [];
 
     for (const req of option.firmwareRequirements) {
-      const currentVersion = await this.readFirmwareVersion(req.moduleId, req.partNumberDid || 'F113');
-      const atLeastMin = currentVersion.localeCompare(req.minVersion, undefined, { numeric: true, sensitivity: 'base' }) >= 0;
+      const details = await this.readModuleVersionDetails(req.moduleId);
+      const currentPartNumber = details.partNumber;
+      const atLeastMin = currentPartNumber.localeCompare(req.minVersion, undefined, { numeric: true, sensitivity: 'base' }) >= 0;
 
       if (!atLeastMin) {
-        missing.push(`${req.description} (Installed: ${currentVersion}, Required: ${req.minVersion})`);
+        missing.push(`${req.description} (Installed: ${currentPartNumber}, Required: ${req.minVersion})`);
       }
     }
 
@@ -200,41 +201,236 @@ export class FordF150Gen14Module implements IVehicleModule {
     return lines[targetAddress] || '0000 0000 0000';
   }
 
-  public async writeOption(option: IVehicleOption, enable: boolean): Promise<IWriteResult> {
+  public async writeOption(option: IVehicleOption, enable: boolean, targetHexOverride?: string): Promise<IWriteResult> {
     const timestampISO = new Date().toISOString();
     const targetAddress = option.targetAddress;
+    const normModule = normalizeModuleId(option.primaryModule);
+    const did = asBuiltAddressToDid(targetAddress);
+
+    if (!obdBridge.isSimulationMode() && obdBridge.isConnected()) {
+      await obdBridge.setHeader(normModule);
+
+      // Single Extended Session (0x03) entry
+      const sessionOk = await udsClient.setDiagnosticSession(0x03);
+      if (!sessionOk) {
+        return {
+          success: false,
+          address: targetAddress,
+          previousHex: '',
+          newHex: '',
+          verifiedHex: '',
+          error: 'Failed to enter Extended Diagnostic Session (0x10 0x03).',
+          timestampISO
+        };
+      }
+
+      try {
+        let existingHex = '';
+        const blockLines: IBlockLine[] = [];
+
+        // 1. Read current DID value
+        const rawData = await udsClient.readDataByIdentifier(did);
+        if (rawData && rawData !== 'NO_DATA' && !/ERROR|UNABLE|STOPPED|7F/i.test(rawData)) {
+          const payloadBytes = parseObdPayloadBytes(rawData);
+          if (payloadBytes.length > 0) {
+            const numLines = Math.ceil(payloadBytes.length / 5);
+            const cleanDid = did.replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
+            const hexOffset = cleanDid.startsWith('DE') ? parseInt(cleanDid.substring(2, 4), 16) : 0;
+            const blockStr = (isNaN(hexOffset) ? 1 : hexOffset + 1).toString().padStart(2, '0');
+
+            for (let l = 1; l <= numLines; l++) {
+              const lineStr = l.toString().padStart(2, '0');
+              const lineAddr = `${normModule}-${blockStr}-${lineStr}`;
+              const lineHex = formatAsBuiltLineHex(lineAddr, payloadBytes);
+              if (lineHex !== 'NO DATA') {
+                blockLines.push({ address: lineAddr, hexValue: lineHex });
+                if (lineAddr === targetAddress) {
+                  existingHex = lineHex;
+                }
+              }
+            }
+          }
+        }
+
+        if (!existingHex) {
+          existingHex = blockLines.find(b => b.address === targetAddress)?.hexValue || '0000 0000 0000';
+        }
+
+        // 2. Store all lines of this block in line history
+        backupManager.recordLineBackup(targetAddress, existingHex, blockLines);
+
+        if (targetHexOverride === undefined) {
+          const firmwareCheck = await this.checkFirmwarePrerequisites(option);
+          if (!firmwareCheck.satisfied) {
+            return {
+              success: false,
+              address: targetAddress,
+              previousHex: existingHex,
+              newHex: '',
+              verifiedHex: '',
+              error: `Insufficient firmware version: ${firmwareCheck.missing.join('; ')}`,
+              timestampISO
+            };
+          }
+
+          if (!enable && !option.revertMask && !option.bitValues) {
+            return {
+              success: false,
+              address: targetAddress,
+              previousHex: existingHex,
+              newHex: '',
+              verifiedHex: '',
+              error: 'Option does not support direct untoggling; restore from history instead.',
+              timestampISO
+            };
+          }
+        }
+
+        let modifiedHex = '';
+        if (targetHexOverride !== undefined) {
+          modifiedHex = targetHexOverride;
+        } else {
+          const maskToApply = (enable || !option.revertMask) ? option.mask : option.revertMask!;
+          modifiedHex = applyAsBuiltModification(targetAddress, existingHex, maskToApply, enable, option.bitValues);
+        }
+
+        if (!verifyFordChecksum(`${targetAddress} ${modifiedHex}`)) {
+          return {
+            success: false,
+            address: targetAddress,
+            previousHex: existingHex,
+            newHex: modifiedHex,
+            verifiedHex: '',
+            error: 'Checksum verification failed before payload transmission.',
+            timestampISO
+          };
+        }
+
+        // 3. Assemble full block write payload (all lines of this block).
+        // As-Built lineHex format is 12 hex chars: 10 data nibbles + 2 checksum nibbles.
+        // UDS DID write payload must contain only raw data bytes (no per-line checksums),
+        // matching the exact byte count returned by the read. Strip trailing checksum byte per line.
+        let fullPayloadCleanHex = '';
+        if (blockLines.length > 0) {
+          for (const bLine of blockLines) {
+            const lineHex = (bLine.address === targetAddress) ? modifiedHex : bLine.hexValue;
+            const lineClean = lineHex.replace(/\s+/g, '');
+            // Strip trailing 2 hex chars (1 checksum byte) — ECU stores only raw data bytes
+            fullPayloadCleanHex += lineClean.length >= 4 ? lineClean.slice(0, -2) : lineClean;
+          }
+        } else {
+          const singleClean = modifiedHex.replace(/\s+/g, '');
+          // Strip trailing checksum byte for single-line write too
+          fullPayloadCleanHex = singleClean.length >= 4 ? singleClean.slice(0, -2) : singleClean;
+        }
+
+        const rawCommand = `2E${did}${fullPayloadCleanHex}`;
+        const store = useCarFixStore();
+        store.lastSimulatedTransmit = {
+          module: option.primaryModule,
+          address: targetAddress,
+          didHex: did,
+          udsService: '0x2E (WriteDataByIdentifier)',
+          rawCommand,
+          formattedCommand: formatRawCommand(rawCommand),
+          previousHex: existingHex,
+          newHex: modifiedHex,
+          timestampISO
+        };
+
+        // Transmit full payload while keeping session active (skipSession = true)
+        const writeOk = await udsClient.writeDataByIdentifier(did, fullPayloadCleanHex, true);
+
+        if (!writeOk) {
+          return {
+            success: false,
+            address: targetAddress,
+            previousHex: existingHex,
+            newHex: modifiedHex,
+            verifiedHex: '',
+            error: 'UDS WriteDataByIdentifier command rejected by ECU.',
+            timestampISO
+          };
+        }
+
+        if (udsClient.isWriteDisabled) {
+          store.showTransmitPreview = true;
+          return {
+            success: true,
+            address: targetAddress,
+            previousHex: existingHex,
+            newHex: modifiedHex,
+            verifiedHex: modifiedHex,
+            timestampISO
+          };
+        }
+
+        // 4. Read back new value while in session and verify write result
+        const readBackRaw = await udsClient.readDataByIdentifier(did);
+        let verifiedHex = '';
+        if (readBackRaw && readBackRaw !== 'NO_DATA' && !/ERROR|UNABLE|STOPPED|7F/i.test(readBackRaw)) {
+          const verifiedPayloadBytes = parseObdPayloadBytes(readBackRaw);
+          if (verifiedPayloadBytes.length > 0) {
+            verifiedHex = formatAsBuiltLineHex(targetAddress, verifiedPayloadBytes);
+          }
+        }
+
+        if (!verifiedHex || verifiedHex === 'NO DATA') {
+          verifiedHex = modifiedHex;
+        }
+
+        return {
+          success: true,
+          address: targetAddress,
+          previousHex: existingHex,
+          newHex: modifiedHex,
+          verifiedHex: verifiedHex,
+          timestampISO
+        };
+      } finally {
+        // 5. Exit Extended Session at the end of operation
+        await udsClient.setDiagnosticSession(0x01);
+      }
+    }
+
+    // --- Simulation Mode Baseline Execution ---
     const existingHex = await this.readOptionLine(targetAddress, option.primaryModule);
+    backupManager.recordLineBackup(targetAddress, existingHex, [
+      { address: targetAddress, hexValue: existingHex }
+    ]);
 
-    // Record pre-modification line backup into history
-    backupManager.recordLineBackup(targetAddress, existingHex);
+    let modifiedHex = '';
+    if (targetHexOverride !== undefined) {
+      modifiedHex = targetHexOverride;
+    } else {
+      const firmwareCheck = await this.checkFirmwarePrerequisites(option);
+      if (!firmwareCheck.satisfied) {
+        return {
+          success: false,
+          address: targetAddress,
+          previousHex: existingHex,
+          newHex: '',
+          verifiedHex: '',
+          error: `Insufficient firmware version: ${firmwareCheck.missing.join('; ')}`,
+          timestampISO
+        };
+      }
 
-    const firmwareCheck = await this.checkFirmwarePrerequisites(option);
-    if (!firmwareCheck.satisfied) {
-      return {
-        success: false,
-        address: targetAddress,
-        previousHex: existingHex,
-        newHex: '',
-        verifiedHex: '',
-        error: `Insufficient firmware version: ${firmwareCheck.missing.join('; ')}`,
-        timestampISO
-      };
+      if (!enable && !option.revertMask && !option.bitValues) {
+        return {
+          success: false,
+          address: targetAddress,
+          previousHex: existingHex,
+          newHex: '',
+          verifiedHex: '',
+          error: 'Option does not support direct untoggling; restore from history instead.',
+          timestampISO
+        };
+      }
+
+      const maskToApply = (enable || !option.revertMask) ? option.mask : option.revertMask!;
+      modifiedHex = applyAsBuiltModification(targetAddress, existingHex, maskToApply, enable, option.bitValues);
     }
-
-    if (!enable && !option.revertMask && !option.bitValues) {
-      return {
-        success: false,
-        address: targetAddress,
-        previousHex: existingHex,
-        newHex: '',
-        verifiedHex: '',
-        error: 'Option does not support direct untoggling; restore from history instead.',
-        timestampISO
-      };
-    }
-
-    const maskToApply = (enable || !option.revertMask) ? option.mask : option.revertMask!;
-    const modifiedHex = applyAsBuiltModification(targetAddress, existingHex, maskToApply, enable, option.bitValues);
 
     if (!verifyFordChecksum(`${targetAddress} ${modifiedHex}`)) {
       return {
@@ -248,62 +444,12 @@ export class FordF150Gen14Module implements IVehicleModule {
       };
     }
 
-    await obdBridge.setHeader(option.primaryModule);
-    const did = asBuiltAddressToDid(targetAddress);
-    const cleanPayload = modifiedHex.replace(/\s+/g, '');
-    const rawCommand = `2E${did}${cleanPayload}`;
-
-    const store = useCarFixStore();
-    store.lastSimulatedTransmit = {
-      module: option.primaryModule,
-      address: targetAddress,
-      didHex: did,
-      udsService: '0x2E (WriteDataByIdentifier)',
-      rawCommand,
-      formattedCommand: formatRawCommand(rawCommand),
-      previousHex: existingHex,
-      newHex: modifiedHex,
-      timestampISO
-    };
-
-    const writeOk = await udsClient.writeDataByIdentifier(did, modifiedHex);
-
-    if (!writeOk) {
-      return {
-        success: false,
-        address: targetAddress,
-        previousHex: existingHex,
-        newHex: modifiedHex,
-        verifiedHex: '',
-        error: 'UDS WriteDataByIdentifier command rejected by ECU.',
-        timestampISO
-      };
-    }
-
-    if (udsClient.isWriteDisabled) {
-      store.showTransmitPreview = true;
-      return {
-        success: true,
-        address: targetAddress,
-        previousHex: existingHex,
-        newHex: modifiedHex,
-        verifiedHex: modifiedHex,
-        timestampISO
-      };
-    }
-
-    await udsClient.ecuReset(0x03);
-    await udsClient.setDiagnosticSession(0x01);
-
-    // Re-read hex chars from vehicle to ensure verified hex value is accurately displayed
-    const verifiedHex = await this.readOptionLine(targetAddress, option.primaryModule);
-
     return {
       success: true,
       address: targetAddress,
       previousHex: existingHex,
       newHex: modifiedHex,
-      verifiedHex: verifiedHex || modifiedHex,
+      verifiedHex: modifiedHex,
       timestampISO
     };
   }

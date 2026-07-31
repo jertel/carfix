@@ -10,8 +10,10 @@ import { IPidDefinition, IPidState, PidViewMode } from '../core/pid/pidTypes';
 import { preferencesManager, IPidPreferenceItem } from '../core/storage/preferencesManager';
 import { obdBridge, parseVinResponseHex } from '../core/obd/obdBridge';
 import { IDtcCode, parseDtcResponseHex } from '../core/obd/dtcDecoder';
-import { asBuiltAddressToDid, normalizeModuleId } from '../core/utils/hexUtils';
+import { asBuiltAddressToDid, normalizeModuleId, parseObdPayloadBytes } from '../core/utils/hexUtils';
 import { udsClient, ISimulatedTransmit, formatRawCommand } from '../core/obd/udsClient';
+import { APP_VERSION } from '../core/config/appVersion';
+
 
 export interface ILogEntry {
   id: string;
@@ -64,14 +66,31 @@ export const useCarFixStore = defineStore('carfix', {
     hasConfirmedExtDiag: false,
     pendingOptionToRead: null as IVehicleOption | null,
     lastSimulatedTransmit: null as ISimulatedTransmit | null,
-    showTransmitPreview: false
+    showTransmitPreview: false,
+    firmwarePrereqMap: {} as Record<string, { satisfied: boolean; missing: string[] }>,
+    agreedDisclaimerVersions: [] as string[],
+    showDisclaimerModal: false,
+    autoConnect: false,
+    autoReconnect: false,
+    reconnectTimer: null as any
   }),
 
   getters: {
     isSimulationMode: () => obdBridge.isSimulationMode(),
     isEngineRunning: (state): boolean => {
-      const rpmPid = state.pids.find(p => p.definition.id.includes('rpm'));
-      return !!(rpmPid && typeof rpmPid.currentValue === 'number' && rpmPid.currentValue > 0);
+      const rpmActive = state.pids
+        .filter(p => p.definition.id.includes('rpm') || p.definition.id.includes('motor'))
+        .some(p => typeof p.currentValue === 'number' && Math.abs(p.currentValue) > 0);
+
+      const speedActive = state.pids
+        .filter(p => p.definition.id.includes('speed'))
+        .some(p => typeof p.currentValue === 'number' && p.currentValue > 0);
+
+      const gearActive = state.pids
+        .filter(p => p.definition.id.includes('gear'))
+        .some(p => typeof p.currentValue === 'number' && p.currentValue > 0);
+
+      return rpmActive || speedActive || gearActive;
     },
     activeModule: (state) => moduleRegistry.getModule(state.activeModuleId),
     availableOptions: (state) => {
@@ -79,7 +98,10 @@ export const useCarFixStore = defineStore('carfix', {
         return [];
       }
       const mod = moduleRegistry.getModule(state.activeModuleId);
-      return mod ? mod.optionsCatalog : [];
+      if (!mod) return [];
+      return [...mod.optionsCatalog].sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+      );
     },
     availablePids: (state): IPidDefinition[] => {
       const mod = moduleRegistry.getModule(state.activeModuleId);
@@ -153,8 +175,14 @@ export const useCarFixStore = defineStore('carfix', {
       }
     },
 
-    toggleCompactDashboardMode() {
+    async toggleCompactDashboardMode() {
       this.isCompactDashboardMode = !this.isCompactDashboardMode;
+      await preferencesManager.saveCompactDashboardModePref(this.isCompactDashboardMode);
+    },
+
+    async setCompactDashboardMode(enabled: boolean) {
+      this.isCompactDashboardMode = enabled;
+      await preferencesManager.saveCompactDashboardModePref(enabled);
     },
 
     openPidChooser() {
@@ -263,15 +291,70 @@ export const useCarFixStore = defineStore('carfix', {
             { id: '7E0', name: 'Engine Control Module (ECM / PCM)', category: 'POWERTRAIN', partNumberDid: 'Mode 09', currentVersion: 'SAE-J1979-MODE09', status: 'OK' }
           ];
         }
+        await this.evaluateOptionFirmwarePrerequisites();
       } finally {
         this.isScanningModules = false;
       }
     },
 
+    async evaluateOptionFirmwarePrerequisites() {
+      if (!this.activeModule || !this.activeModule.checkFirmwarePrerequisites) {
+        this.firmwarePrereqMap = {};
+        return;
+      }
+      const map: Record<string, { satisfied: boolean; missing: string[] }> = {};
+      for (const opt of this.availableOptions) {
+        if (opt.firmwareRequirements && opt.firmwareRequirements.length > 0) {
+          const res = await this.activeModule.checkFirmwarePrerequisites(opt);
+          map[opt.id] = res;
+        } else {
+          map[opt.id] = { satisfied: true, missing: [] };
+        }
+      }
+      this.firmwarePrereqMap = map;
+    },
+
+    isOptionFirmwareSatisfied(option: IVehicleOption): boolean {
+      if (!option || !option.firmwareRequirements || option.firmwareRequirements.length === 0) {
+        return true;
+      }
+      const entry = this.firmwarePrereqMap[option.id];
+      return entry ? entry.satisfied : true;
+    },
+
+    getOptionFirmwareMissingReason(option: IVehicleOption): string {
+      if (!option || !option.firmwareRequirements) return '';
+      const entry = this.firmwarePrereqMap[option.id];
+      if (entry && !entry.satisfied) {
+        return entry.missing.join('; ');
+      }
+      return '';
+    },
+
+    async checkDisclaimerAgreement() {
+      const versions = await preferencesManager.loadAgreedDisclaimerVersions();
+      this.agreedDisclaimerVersions = versions;
+      this.showDisclaimerModal = !versions.includes(APP_VERSION);
+    },
+
+    async acceptDisclaimer(version: string = APP_VERSION) {
+      await preferencesManager.saveAgreedDisclaimerVersion(version);
+      if (!this.agreedDisclaimerVersions.includes(version)) {
+        this.agreedDisclaimerVersions.push(version);
+      }
+      this.showDisclaimerModal = false;
+      this.addLog('INF', `User agreed to disclaimer version ${version}`);
+    },
+
     async initializeDashboard() {
       this.setupObdLogging();
       this.isDebugLoggingEnabled = await preferencesManager.loadDebugLoggingPref();
+      this.isCompactDashboardMode = await preferencesManager.loadCompactDashboardModePref();
+      this.telemetryRate = await preferencesManager.loadTelemetryRatePref();
+      this.autoConnect = await preferencesManager.loadAutoConnectPref();
+      this.autoReconnect = await preferencesManager.loadAutoReconnectPref();
       await backupManager.loadPersistedLineHistory();
+      await this.checkDisclaimerAgreement();
 
       await this.fetchPairedDevices();
       const savedPreferences = await preferencesManager.loadDashboardPreferences();
@@ -430,8 +513,9 @@ export const useCarFixStore = defineStore('carfix', {
           await this.scanDtcCodes();
         }
 
-        this.activeTab = 'pids';
         this.startTelemetryPolling();
+        await this.checkEngineRunningLive();
+        this.clearReconnectTimer();
       } catch (err: any) {
         this.isConnected = false;
         this.addLog('ERR', `Failed to connect: ${err?.message || err}`);
@@ -470,8 +554,46 @@ export const useCarFixStore = defineStore('carfix', {
       obdBridge.setSimulationMode(false);
       if (isUnexpected) {
         this.addLog('WRN', 'Lost connection');
+        if (this.autoReconnect) {
+          this.startReconnectTimer();
+        }
       } else {
+        this.clearReconnectTimer();
         this.addLog('INF', 'User disconnected');
+      }
+    },
+
+    clearReconnectTimer() {
+      if (this.reconnectTimer !== null) {
+        clearInterval(this.reconnectTimer);
+        this.reconnectTimer = null;
+      }
+    },
+
+    startReconnectTimer() {
+      this.clearReconnectTimer();
+      this.addLog('INF', 'Auto-reconnect active — retrying every 60s');
+      this.reconnectTimer = setInterval(async () => {
+        if (this.isConnected || this.isConnecting) return;
+        this.addLog('INF', 'Auto-reconnect: attempting to connect...');
+        try {
+          await this.connectAdapter();
+        } catch {
+          // next attempt in 60s
+        }
+      }, 60000);
+    },
+
+    async setAutoConnect(enabled: boolean) {
+      this.autoConnect = enabled;
+      await preferencesManager.saveAutoConnectPref(enabled);
+    },
+
+    async setAutoReconnect(enabled: boolean) {
+      this.autoReconnect = enabled;
+      await preferencesManager.saveAutoReconnectPref(enabled);
+      if (!enabled) {
+        this.clearReconnectTimer();
       }
     },
 
@@ -611,8 +733,9 @@ export const useCarFixStore = defineStore('carfix', {
       }, Math.max(200, this.telemetryRate * 1000));
     },
 
-    setTelemetryRate(rate: number) {
+    async setTelemetryRate(rate: number) {
       this.telemetryRate = rate;
+      await preferencesManager.saveTelemetryRatePref(rate);
       if (this.isPolling) {
         if (this.pollTimer) {
           clearInterval(this.pollTimer);
@@ -697,7 +820,63 @@ export const useCarFixStore = defineStore('carfix', {
         clearInterval(this.pollTimer);
         this.pollTimer = null;
       }
-      this.resetPidData();
+    },
+
+    async checkEngineRunningLive(): Promise<boolean> {
+      if (!this.isConnected) return false;
+      if (obdBridge.isSimulationMode()) {
+        return this.isEngineRunning;
+      }
+
+      try {
+        await obdBridge.setHeader('7DF');
+
+        // 1. Query PID 010C (Engine RPM)
+        const rawRpm = await obdBridge.sendCommand('010C', 800);
+        if (rawRpm && !/NO DATA|ERROR|UNABLE|STOPPED|CAN ERROR/i.test(rawRpm)) {
+          const bytes = parseObdPayloadBytes(rawRpm);
+          if (bytes.length >= 2) {
+            const rpm = Math.round(((bytes[0] * 256) + bytes[1]) / 4);
+            const rpmPid = this.pids.find(p => p.definition.id.includes('rpm'));
+            if (rpmPid) {
+              rpmPid.currentValue = rpm;
+            }
+            if (rpm > 0) return true;
+          }
+        }
+
+        // 2. Query PID 010D (Vehicle Speed)
+        const rawSpeed = await obdBridge.sendCommand('010D', 800);
+        if (rawSpeed && !/NO DATA|ERROR|UNABLE|STOPPED|CAN ERROR/i.test(rawSpeed)) {
+          const bytes = parseObdPayloadBytes(rawSpeed);
+          if (bytes.length >= 1) {
+            const speed = Math.round(bytes[0] * 0.621371);
+            const speedPid = this.pids.find(p => p.definition.id.includes('speed'));
+            if (speedPid) {
+              speedPid.currentValue = speed;
+            }
+            if (speed > 0) return true;
+          }
+        }
+
+        // 3. Query PID 01A4 (Transmission Actual Gear / Park status)
+        const rawGear = await obdBridge.sendCommand('01A4', 800);
+        if (rawGear && !/NO DATA|ERROR|UNABLE|STOPPED|CAN ERROR/i.test(rawGear)) {
+          const bytes = parseObdPayloadBytes(rawGear);
+          if (bytes.length >= 1) {
+            const gear = bytes[0];
+            const gearPid = this.pids.find(p => p.definition.id.includes('gear'));
+            if (gearPid) {
+              gearPid.currentValue = gear;
+            }
+            if (gear > 0) return true;
+          }
+        }
+      } catch (err: any) {
+        this.addLog('WRN', `Live vehicle status check error: ${err?.message || err}`);
+      }
+
+      return this.isEngineRunning;
     },
 
     async setPidViewMode(pidId: string, mode: PidViewMode) {
@@ -737,6 +916,12 @@ export const useCarFixStore = defineStore('carfix', {
 
     async readOptionLine(option: IVehicleOption) {
       if (!this.activeModule || !this.isConnected) return;
+      const running = await this.checkEngineRunningLive();
+      if (running) {
+        this.optionLoadingMap[option.id] = false;
+        this.addLog('ERR', `Cannot read option line ${option.targetAddress}: Engine is running.`);
+        return;
+      }
       this.optionLoadingMap[option.id] = true;
       const wasPolling = this.isPolling;
       if (wasPolling) {
@@ -767,8 +952,13 @@ export const useCarFixStore = defineStore('carfix', {
       return isOptionEnabled(option, hex);
     },
 
-    requestOptionsRefresh(target?: IVehicleOption) {
-      if (!this.isConnected || !this.isVinMatched || this.isEngineRunning) return;
+    async requestOptionsRefresh(target?: IVehicleOption) {
+      if (!this.isConnected || !this.isVinMatched) return;
+      const running = await this.checkEngineRunningLive();
+      if (running) {
+        this.addLog('WRN', 'Cannot enter Extended Diagnostic mode: Engine is running.');
+        return;
+      }
       if (target) {
         this.pendingOptionToRead = target;
         this.showExtDiagPrompt = true;
@@ -776,6 +966,13 @@ export const useCarFixStore = defineStore('carfix', {
     },
 
     async confirmOptionsRefresh() {
+      const running = await this.checkEngineRunningLive();
+      if (running) {
+        this.showExtDiagPrompt = false;
+        this.pendingOptionToRead = null;
+        this.addLog('ERR', 'Cannot enter Extended Diagnostic Session: Engine is running.');
+        return;
+      }
       this.showExtDiagPrompt = false;
       this.hasConfirmedExtDiag = true;
       if (this.pendingOptionToRead) {
@@ -792,6 +989,34 @@ export const useCarFixStore = defineStore('carfix', {
 
     async toggleOption(option: IVehicleOption, enable: boolean) {
       if (!this.activeModule || !this.isVinMatched) return;
+      if (!this.isOptionFirmwareSatisfied(option)) {
+        const reason = this.getOptionFirmwareMissingReason(option);
+        this.lastWriteResult = {
+          success: false,
+          address: option.targetAddress,
+          previousHex: '',
+          newHex: '',
+          verifiedHex: '',
+          error: `Cannot toggle setting: ${reason || 'Unmet firmware prerequisite'}`,
+          timestampISO: new Date().toISOString()
+        };
+        this.addLog('ERR', `Write blocked for ${option.targetAddress}: Unmet firmware prerequisite.`);
+        return;
+      }
+      const running = await this.checkEngineRunningLive();
+      if (running) {
+        this.lastWriteResult = {
+          success: false,
+          address: option.targetAddress,
+          previousHex: '',
+          newHex: '',
+          verifiedHex: '',
+          error: 'Cannot write parameter: Engine is running. Turn off engine (Ignition ON, Engine OFF).',
+          timestampISO: new Date().toISOString()
+        };
+        this.addLog('ERR', `Write blocked for ${option.targetAddress}: Engine is running.`);
+        return;
+      }
       const wasPolling = this.isPolling;
       if (wasPolling) {
         this.stopTelemetryPolling();
@@ -813,54 +1038,36 @@ export const useCarFixStore = defineStore('carfix', {
 
     async restoreOptionLine(option: IVehicleOption, targetHex: string): Promise<boolean> {
       if (!this.activeModule || !this.isVinMatched) return false;
+      const running = await this.checkEngineRunningLive();
+      if (running) {
+        this.lastWriteResult = {
+          success: false,
+          address: option.targetAddress,
+          previousHex: '',
+          newHex: '',
+          verifiedHex: '',
+          error: 'Cannot restore parameter: Engine is running. Turn off engine (Ignition ON, Engine OFF).',
+          timestampISO: new Date().toISOString()
+        };
+        this.addLog('ERR', `Restore blocked for ${option.targetAddress}: Engine is running.`);
+        return false;
+      }
       const wasPolling = this.isPolling;
       if (wasPolling) {
         this.stopTelemetryPolling();
       }
       this.isWriting = true;
       try {
-        const targetAddress = option.targetAddress;
-        const currentHex = this.moduleData[targetAddress] || '0000 0000 0000';
-        // Backup current line before overwriting with historical hex
-        backupManager.recordLineBackup(targetAddress, currentHex);
-
-        await obdBridge.setHeader(option.primaryModule);
-        const did = asBuiltAddressToDid(targetAddress);
-        const cleanPayload = targetHex.replace(/\s+/g, '');
-        const rawCommand = `2E${did}${cleanPayload}`;
-
-        this.lastSimulatedTransmit = {
-          module: option.primaryModule,
-          address: targetAddress,
-          didHex: did,
-          udsService: '0x2E (WriteDataByIdentifier)',
-          rawCommand: rawCommand,
-          formattedCommand: formatRawCommand(rawCommand),
-          previousHex: currentHex,
-          newHex: targetHex,
-          timestampISO: new Date().toISOString()
-        };
-
-        const writeOk = await udsClient.writeDataByIdentifier(did, targetHex);
-
-        if (!writeOk) {
-          this.addLog('ERR', `Failed to restore line ${targetAddress}`);
+        const result = await (this.activeModule as any).writeOption(option, false, targetHex);
+        this.lastWriteResult = result;
+        if (result.success) {
+          this.moduleData[option.targetAddress] = result.verifiedHex || targetHex;
+          this.addLog('INF', `Restored line ${option.targetAddress} to ${targetHex}`);
+          return true;
+        } else {
+          this.addLog('ERR', `Failed to restore line ${option.targetAddress}: ${result.error || 'ECU rejection'}`);
           return false;
         }
-
-        if (udsClient.isWriteDisabled) {
-          this.showTransmitPreview = true;
-          this.addLog('INF', `[TROUBLESHOOTING MODE] Suppressed ECU write for line ${targetAddress}. Transmission preview displayed.`);
-          return true;
-        }
-
-        await udsClient.ecuReset(0x03);
-        await udsClient.setDiagnosticSession(0x01);
-
-        // Re-read option line from vehicle ECU to update state and toggle
-        await this.readOptionLine(option);
-        this.addLog('INF', `Restored line ${targetAddress} to ${targetHex}`);
-        return true;
       } catch (err: any) {
         this.addLog('ERR', `Failed to restore line ${option.targetAddress}: ${err?.message || err}`);
         return false;

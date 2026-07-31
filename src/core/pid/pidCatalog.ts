@@ -138,6 +138,24 @@ export const PID_CATALOG: IPidDefinition[] = [
       }
       return 0;
     }
+  },
+  {
+    id: 'transmission_gear',
+    nameKey: 'pids.gear.name',
+    name: 'Transmission Gear Position',
+    command: '01A4',
+    header: '7DF',
+    unit: '',
+    minValue: 0,
+    maxValue: 10,
+    decoder: (hex: string) => {
+      // 01A4 response: 0 = Park/Neutral, 1..10 = Gears 1..10
+      const bytes = parseObdPayloadBytes(hex);
+      if (bytes.length >= 1) {
+        return bytes[0];
+      }
+      return 0;
+    }
   }
 ];
 

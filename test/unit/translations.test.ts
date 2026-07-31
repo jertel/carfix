@@ -23,6 +23,11 @@ describe('CarFix Localization (i18n) Helper', () => {
     expect(t('modules.partNumber', 'es')).toBe('Nº de Pieza');
   });
 
+  it('should localize history.blockLinesTitle in English and Spanish', () => {
+    expect(t('history.blockLinesTitle', 'en')).toBe('Block Lines:');
+    expect(t('history.blockLinesTitle', 'es')).toBe('Líneas del Bloque:');
+  });
+
   it('should fallback to English for unknown keys or unsupported locales', () => {
     expect(t('challenge.title', 'fr')).toBe('Confirm Vehicle Write');
   });

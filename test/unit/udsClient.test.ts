@@ -52,4 +52,36 @@ describe('UDS Client ISO 14229 Engine', () => {
     const formatted = formatRawCommand(raw);
     expect(formatted).toBe('2E 7D 05 00 00 00 40 20 68');
   });
+
+  it('should send raw unspaced hex command for single-frame writes (<= 7 bytes)', async () => {
+    const mockBridge = new ObdBridge();
+    mockBridge.setSimulationMode(true);
+    let capturedCmd = '';
+    mockBridge.sendCommand = async (cmd: string) => {
+      capturedCmd = cmd;
+      return '726 03 6E 12 34';
+    };
+    const client = new UdsClient(mockBridge);
+    client.isWriteDisabled = false;
+
+    const result = await client.writeDataByIdentifier('1234', '5678', true);
+    expect(result).toBe(true);
+    expect(capturedCmd).toBe('2E12345678');
+  });
+
+  it('should send STPX command for multi-frame writes (> 7 bytes)', async () => {
+    const mockBridge = new ObdBridge();
+    mockBridge.setSimulationMode(true);
+    let capturedCmd = '';
+    mockBridge.sendCommand = async (cmd: string) => {
+      capturedCmd = cmd;
+      return '726 03 6E DE 3E';
+    };
+    const client = new UdsClient(mockBridge);
+    client.isWriteDisabled = false;
+
+    const result = await client.writeDataByIdentifier('DE3E', '04010001030000000101', true);
+    expect(result).toBe(true);
+    expect(capturedCmd).toBe('STPX D:2EDE3E04010001030000000101');
+  });
 });
