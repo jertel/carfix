@@ -28,6 +28,7 @@ export const useCarFixStore = defineStore('carfix', {
   state: () => ({
     activeTab: 'connect' as 'connect' | 'pids' | 'options' | 'modules',
     isConnecting: false,
+    connectionStatusText: '',
     isConnected: false,
     activeAdapter: '',
     selectedDeviceAddress: '',
@@ -284,13 +285,26 @@ export const useCarFixStore = defineStore('carfix', {
     async scanVehicleModules() {
       this.isScanningModules = true;
       try {
+        let scanned: IVehicleModuleInfo[] = [];
         if (this.activeModule && this.activeModule.scanModuleVersions) {
-          this.detectedModules = await this.activeModule.scanModuleVersions();
+          scanned = await this.activeModule.scanModuleVersions();
         } else {
-          this.detectedModules = [
+          scanned = [
             { id: '7E0', name: 'Engine Control Module (ECM / PCM)', category: 'POWERTRAIN', partNumberDid: 'Mode 09', currentVersion: 'SAE-J1979-MODE09', status: 'OK' }
           ];
         }
+
+        for (const mod of scanned) {
+          const versionStr = mod.softwareVersion || mod.partNumber || mod.currentVersion;
+          if (versionStr) {
+            const res = await preferencesManager.recordModuleVersion(mod.id, versionStr);
+            mod.history = res.history;
+            mod.firstDetectedISO = res.firstDetectedISO;
+            mod.versionChanged24h = res.versionChanged24h;
+          }
+        }
+
+        this.detectedModules = scanned;
         await this.evaluateOptionFirmwarePrerequisites();
       } finally {
         this.isScanningModules = false;
@@ -461,11 +475,13 @@ export const useCarFixStore = defineStore('carfix', {
     async connectAdapter() {
       if (this.isConnecting) return;
       this.isConnecting = true;
-      this.addLog('INF', 'Connecting');
+      this.connectionStatusText = 'Connecting to OBD adapter...';
+      this.addLog('INF', 'Initiating OBD connection phase...');
 
       const targetAddress = this.selectedDeviceAddress || (obdBridge.isSimulationMode() ? 'DEMO_MODE' : '');
       if (!targetAddress) {
         this.isConnecting = false;
+        this.connectionStatusText = '';
         throw new Error('Please select an OBDII Bluetooth adapter from the list.');
       }
 
@@ -478,6 +494,8 @@ export const useCarFixStore = defineStore('carfix', {
         : (selected ? selected.name : `OBD Adapter (${targetAddress})`);
 
       try {
+        this.connectionStatusText = 'Connecting to OBD adapter...';
+        this.addLog('INF', `Opening connection to ${adapterName} [${isDemo ? 'DEMO' : 'HARDWARE'}]...`);
         await obdBridge.connect({
           adapterName: adapterName,
           connectionType: 'BLUETOOTH_CLASSIC',
@@ -490,12 +508,17 @@ export const useCarFixStore = defineStore('carfix', {
         this.activeAdapter = adapterName;
         this.addLog('INF', `Connected to ${adapterName} [${isDemo ? 'DEMO' : 'HARDWARE'}]`);
 
+        this.connectionStatusText = 'Querying vehicle VIN (Mode 09 / UDS F190)...';
+        this.addLog('INF', 'Querying vehicle VIN (Mode 09 / UDS F190)...');
         const detectedVin = await this.readVehicleVin();
         this.connectedVin = detectedVin;
         if (detectedVin) {
-          this.addLog('INF', `Read VIN ${detectedVin}`);
+          this.addLog('INF', `Vehicle VIN detected: ${detectedVin}`);
+        } else {
+          this.addLog('WRN', 'No VIN returned from vehicle');
         }
 
+        this.connectionStatusText = 'Matching vehicle profile...';
         const matchedModule = detectedVin ? moduleRegistry.findModuleForVin(detectedVin) : null;
         if (matchedModule) {
           this.activeModuleId = matchedModule.id;
@@ -509,13 +532,22 @@ export const useCarFixStore = defineStore('carfix', {
         }
 
         if (this.activeModule && this.isVinMatched) {
+          this.connectionStatusText = 'Scanning vehicle ECU software modules...';
+          this.addLog('INF', 'Scanning vehicle ECU module software versions...');
           await this.scanVehicleModules();
+
+          this.connectionStatusText = 'Querying Diagnostic Trouble Codes (DTCs)...';
+          this.addLog('INF', 'Querying Diagnostic Trouble Codes (DTCs)...');
           await this.scanDtcCodes();
         }
 
+        this.connectionStatusText = 'Initializing live telemetry polling...';
+        this.addLog('INF', 'Starting telemetry polling & engine state check...');
         this.startTelemetryPolling();
         await this.checkEngineRunningLive();
         this.clearReconnectTimer();
+
+        this.addLog('INF', 'Connection phase complete.');
       } catch (err: any) {
         this.isConnected = false;
         this.addLog('ERR', `Failed to connect: ${err?.message || err}`);
@@ -523,6 +555,7 @@ export const useCarFixStore = defineStore('carfix', {
         throw err;
       } finally {
         this.isConnecting = false;
+        this.connectionStatusText = '';
       }
     },
 

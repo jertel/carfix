@@ -10,6 +10,7 @@
           icon="circle"
           dense
           class="text-caption text-weight-bold header-status-chip"
+          :class="{ 'pulse-connecting': store.isConnecting }"
           role="status"
           :aria-label="'Connection Status: ' + statusLabel"
         >
@@ -142,6 +143,32 @@ const statusTextColor = computed(() => {
 .header-status-chip {
   height: 22px;
   font-size: 0.7rem;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+@keyframes chip-pulse {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.pulse-connecting {
+  animation: chip-pulse 1.4s infinite ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-connecting {
+    animation: none;
+  }
 }
 
 .header-labeled-btn {

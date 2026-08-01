@@ -1,7 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
 import { PidViewMode } from '../pid/pidTypes';
-import { ILineHistoryMap } from '../types/module';
+import { ILineHistoryMap, IModuleVersionHistoryEntry, IModuleVersionHistoryMap } from '../types/module';
 
 export interface IPidPreferenceItem {
   id: string;
@@ -24,6 +24,8 @@ export class PreferencesManager {
   static KEY_OPTIONS_SUB_TAB = 'carfix_options_sub_tab';
   static KEY_AUTO_CONNECT = 'carfix_auto_connect';
   static KEY_AUTO_RECONNECT = 'carfix_auto_reconnect';
+  static KEY_MODULE_VERSION_HISTORY = 'carfix_module_version_history';
+  static KEY_MODULE_SORT_BY = 'carfix_module_sort_by';
 
 
   public static async saveDashboardPreferences(items: IPidPreferenceItem[]): Promise<void> {
@@ -346,6 +348,103 @@ export class PreferencesManager {
       raw = localStorage.getItem(PreferencesManager.KEY_AUTO_RECONNECT);
     }
     return raw === 'true';
+  }
+
+  public static async saveModuleVersionHistory(historyMap: IModuleVersionHistoryMap): Promise<void> {
+    const jsonVal = JSON.stringify(historyMap);
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await Preferences.set({ key: PreferencesManager.KEY_MODULE_VERSION_HISTORY, value: jsonVal });
+        return;
+      } catch (e) {}
+    }
+    localStorage.setItem(PreferencesManager.KEY_MODULE_VERSION_HISTORY, jsonVal);
+  }
+
+  public static async loadModuleVersionHistory(): Promise<IModuleVersionHistoryMap> {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const result = await Preferences.get({ key: PreferencesManager.KEY_MODULE_VERSION_HISTORY });
+        if (result.value) {
+          return JSON.parse(result.value);
+        }
+      } catch (e) {}
+    }
+    const raw = localStorage.getItem(PreferencesManager.KEY_MODULE_VERSION_HISTORY);
+    if (raw) {
+      try {
+        return JSON.parse(raw);
+      } catch (e) {}
+    }
+    return {};
+  }
+
+  public static async recordModuleVersion(
+    moduleId: string,
+    version: string,
+    timestampISO: string = new Date().toISOString()
+  ): Promise<{ history: IModuleVersionHistoryEntry[]; firstDetectedISO: string; versionChanged24h: boolean }> {
+    const historyMap = await PreferencesManager.loadModuleVersionHistory();
+    let history = historyMap[moduleId] || [];
+
+    if (history.length === 0) {
+      history = [{ version, dateRecordedISO: timestampISO }];
+      historyMap[moduleId] = history;
+      await PreferencesManager.saveModuleVersionHistory(historyMap);
+    } else {
+      const latest = history[history.length - 1];
+      if (latest.version !== version) {
+        history.push({ version, dateRecordedISO: timestampISO });
+        historyMap[moduleId] = history;
+        await PreferencesManager.saveModuleVersionHistory(historyMap);
+      }
+    }
+
+    const firstMatch = history.find(e => e.version === version);
+    const firstDetectedISO = firstMatch ? firstMatch.dateRecordedISO : timestampISO;
+
+    let versionChanged24h = false;
+    if (history.length > 1) {
+      const lastChangeISO = history[history.length - 1].dateRecordedISO;
+      const lastChangeTime = new Date(lastChangeISO).getTime();
+      const currentTime = new Date(timestampISO).getTime();
+      if (!isNaN(lastChangeTime) && !isNaN(currentTime)) {
+        versionChanged24h = (currentTime - lastChangeTime) <= 24 * 60 * 60 * 1000 && (currentTime - lastChangeTime) >= 0;
+      }
+    }
+
+    return {
+      history,
+      firstDetectedISO,
+      versionChanged24h
+    };
+  }
+
+  public static async saveModuleSortByPref(sortBy: 'NAME' | 'DATE_UPDATED'): Promise<void> {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await Preferences.set({ key: PreferencesManager.KEY_MODULE_SORT_BY, value: sortBy });
+        return;
+      } catch (e) {}
+    }
+    localStorage.setItem(PreferencesManager.KEY_MODULE_SORT_BY, sortBy);
+  }
+
+  public static async loadModuleSortByPref(): Promise<'NAME' | 'DATE_UPDATED'> {
+    let raw: string | null = null;
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const res = await Preferences.get({ key: PreferencesManager.KEY_MODULE_SORT_BY });
+        raw = res.value;
+      } catch (e) {}
+    }
+    if (raw === null || raw === undefined) {
+      raw = localStorage.getItem(PreferencesManager.KEY_MODULE_SORT_BY);
+    }
+    if (raw === 'DATE_UPDATED' || raw === 'NAME') {
+      return raw;
+    }
+    return 'NAME';
   }
 }
 

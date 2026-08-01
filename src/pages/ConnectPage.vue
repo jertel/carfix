@@ -55,6 +55,17 @@
             />
           </q-card-actions>
 
+          <!-- Connection Status Step Banner -->
+          <div
+            v-if="store.isConnecting"
+            class="q-mx-md q-mb-md q-pa-sm rounded-borders bg-blue-1 dark:bg-blue-10 text-primary dark:text-blue-2 row items-center justify-center q-gutter-x-sm"
+            role="status"
+            aria-live="polite"
+          >
+            <q-spinner-dots size="20px" color="primary" />
+            <span class="text-caption text-weight-bold">{{ store.connectionStatusText || 'Connecting...' }}</span>
+          </div>
+
           <div v-if="connectionError" class="q-px-md q-pb-sm carfix-error-text text-caption text-center text-weight-bold" role="alert">
             {{ connectionError }}
           </div>

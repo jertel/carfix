@@ -16,6 +16,13 @@ export interface IFirmwareRequirement {
   description: string;         // Descriptive title for UI display
 }
 
+export interface IModuleVersionHistoryEntry {
+  version: string;             // softwareVersion or partNumber or currentVersion
+  dateRecordedISO: string;     // ISO timestamp when this version was detected/recorded
+}
+
+export type IModuleVersionHistoryMap = Record<string, IModuleVersionHistoryEntry[]>;
+
 export interface IVehicleModuleInfo {
   id: string;                  // Module CAN ID e.g. "726"
   name: string;                // Module title e.g. "Body Control Module (BCM)"
@@ -25,6 +32,9 @@ export interface IVehicleModuleInfo {
   partNumber?: string;         // Hardware / Assembly Part Number e.g. "ML3T-14G647-AB"
   softwareVersion?: string;    // Software Strategy Version e.g. "ML3T-14G648-BA"
   status: 'OK' | 'UPDATE_AVAILABLE' | 'UNKNOWN';
+  firstDetectedISO?: string;   // ISO timestamp date version was first detected
+  versionChanged24h?: boolean; // Whether the module version was changed in the past 24h
+  history?: IModuleVersionHistoryEntry[]; // Recorded version history for this module
 }
 
 export interface IVehicleOption {

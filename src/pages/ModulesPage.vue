@@ -21,6 +21,31 @@
         <q-tab-panels v-model="activeModulesSubTab" animated class="bg-transparent">
           <!-- TAB 1: Modules List (Original Tabular View) -->
           <q-tab-panel name="modules" class="q-pa-none">
+            <!-- Modules Sort Controls Bar -->
+            <div v-if="store.detectedModules.length > 0" class="row items-center justify-between q-mb-sm q-px-xs font-sans">
+              <div class="text-caption text-grey-7 dark:text-grey-4 text-weight-medium">
+                {{ store.detectedModules.length }} Modules
+              </div>
+
+              <div class="row items-center q-gutter-x-xs">
+                <span class="text-caption text-grey-7 dark:text-grey-4 text-weight-medium">{{ t('modules.sortBy') }}:</span>
+                <q-btn-toggle
+                  v-model="moduleSortBy"
+                  dense
+                  unelevated
+                  toggle-color="primary"
+                  text-color="grey-7"
+                  class="carfix-card rounded-borders font-sans text-caption"
+                  :options="[
+                    { label: t('modules.sortName'), value: 'NAME' },
+                    { label: t('modules.sortDateUpdated'), value: 'DATE_UPDATED' }
+                  ]"
+                  aria-label="Sort Modules"
+                  @update:model-value="onSortByChanged"
+                />
+              </div>
+            </div>
+
             <div v-if="sortedModules.length > 0" class="carfix-card rounded-borders overflow-hidden" role="table" aria-label="Vehicle Modules List">
               <!-- Table Header Row -->
               <div
@@ -71,11 +96,37 @@
                       </q-badge>
                     </div>
 
-                    <!-- Column 3: Software Version + Expand Icon -->
+                    <!-- Column 3: Software Version + New/Latest Icon + Expand Icon -->
                     <div class="col-5 col-sm-6 row items-center justify-between no-wrap q-pl-xs">
-                      <span class="text-caption font-mono text-weight-medium text-primary version-text-ellipsis">
-                        {{ mod.softwareVersion || mod.partNumber || mod.currentVersion || t('modules.noSoftwareVersion') }}
-                      </span>
+                      <div class="row items-center no-wrap ellipsis col shrink-0">
+                        <q-badge
+                          v-if="mod.versionChanged24h"
+                          color="positive"
+                          class="text-caption font-mono shrink-0 q-mr-xs cursor-pointer"
+                          :aria-label="t('modules.newVersionTooltip')"
+                        >
+                          <q-icon name="new_releases" size="13px" class="q-mr-2xs" />
+                          {{ t('modules.newVersionBadge') }}
+                          <q-tooltip class="text-caption shadow-2">{{ t('modules.newVersionTooltip') }}</q-tooltip>
+                        </q-badge>
+
+                        <q-badge
+                          v-else-if="mod.id === newestModuleId"
+                          outline
+                          color="primary"
+                          class="text-caption font-mono shrink-0 q-mr-xs cursor-pointer"
+                          :aria-label="t('modules.newestVersionTooltip')"
+                        >
+                          <q-icon name="update" size="13px" class="q-mr-2xs" />
+                          {{ t('modules.newestBadge') }}
+                          <q-tooltip class="text-caption shadow-2">{{ t('modules.newestVersionTooltip') }}</q-tooltip>
+                        </q-badge>
+
+                        <span class="text-caption font-mono text-weight-medium text-primary version-text-ellipsis">
+                          {{ mod.softwareVersion || mod.partNumber || mod.currentVersion || t('modules.noSoftwareVersion') }}
+                        </span>
+                      </div>
+
                       <q-icon
                         :name="isExpanded(mod.id) ? 'expand_less' : 'expand_more'"
                         size="22px"
@@ -115,6 +166,11 @@
                         </div>
 
                         <div class="col-12 col-sm-6">
+                          <span class="text-grey-7 dark:text-grey-4 text-weight-medium">{{ t('modules.firstDetected') }}:</span>
+                          <span class="q-ml-xs text-weight-bold text-wrap-break">{{ mod.firstDetectedISO ? formatDateTime(mod.firstDetectedISO) : t('modules.noSoftwareVersion') }}</span>
+                        </div>
+
+                        <div class="col-12 col-sm-6">
                           <span class="text-grey-7 dark:text-grey-4 text-weight-medium">{{ t('modules.did') }}:</span>
                           <span class="q-ml-xs text-weight-bold">{{ mod.partNumberDid || 'F113' }}</span>
                         </div>
@@ -130,8 +186,8 @@
                         </div>
                       </div>
 
-                      <!-- Export As-Built Action Button -->
-                      <div class="q-mt-md row items-center justify-start">
+                      <!-- Action Buttons: Export As-Built & Version History -->
+                      <div class="q-mt-md row items-center justify-start q-gutter-x-sm">
                         <q-btn
                           color="primary"
                           outline
@@ -142,6 +198,17 @@
                           :loading="exportingModuleId === mod.id"
                           :aria-label="`Export As-Built data for ${getModuleAbbrevFromInfo(mod)} 0x${mod.id}`"
                           @click.stop="handleExportModule(mod.id)"
+                        />
+
+                        <q-btn
+                          color="primary"
+                          outline
+                          dense
+                          class="q-px-sm font-mono text-caption"
+                          icon="manage_history"
+                          :label="t('modules.viewHistory')"
+                          :aria-label="`${t('modules.viewHistory')} for ${getModuleAbbrevFromInfo(mod)} 0x${mod.id}`"
+                          @click.stop="openModuleHistory(mod)"
                         />
                       </div>
                     </div>
@@ -585,6 +652,12 @@
           @confirm="onExtDiagConfirmed"
           @cancel="onExtDiagCancelled"
         />
+
+        <!-- Module Version History Modal Dialog -->
+        <ModuleHistoryDialog
+          v-model="isModuleHistoryOpen"
+          :module-info="selectedHistoryModule"
+        />
       </div>
     </div>
   </q-page>
@@ -595,15 +668,17 @@ import { ref, computed, onMounted } from 'vue';
 import { useQuasar } from 'quasar';
 import { useCarFixStore } from '../stores/carfixStore';
 import { t } from '../core/i18n/translations';
-import { getModuleAbbrevFromInfo } from '../core/utils/hexUtils';
+import { getModuleAbbrevFromInfo, getModuleAbbreviation as hexUtilsGetModuleAbbreviation } from '../core/utils/hexUtils';
 import { generateModuleAsBuiltExportText } from '../core/utils/moduleExporter';
 import { exportLogsToFile } from '../core/utils/logExporter';
 import { getSafetyIcon, getSafetyIconColor, getSafetyTooltip } from '../core/utils/safetyRiskUtils';
-import { IVehicleOption, IWriteResult } from '../core/types/module';
+import { IVehicleOption, IVehicleModuleInfo, IWriteResult } from '../core/types/module';
+import { formatLocalizedDateTime, getSystemTimezone } from '../core/utils/dateTimeUtils';
 import WriteChallengeDialog from '../components/WriteChallengeDialog.vue';
 import LineHistoryDialog from '../components/LineHistoryDialog.vue';
-import ExtDiagConfirmationDialog from '../components/ExtDiagConfirmationDialog.vue';
+import ModuleHistoryDialog from '../components/ModuleHistoryDialog.vue';
 import { backupManager } from '../core/safety/backupManager';
+import { preferencesManager } from '../core/storage/preferencesManager';
 
 const $q = useQuasar();
 const store = useCarFixStore();
@@ -611,6 +686,10 @@ const store = useCarFixStore();
 const activeModulesSubTab = ref<'modules' | 'configure'>('modules');
 const expandedModules = ref<Record<string, boolean>>({});
 const exportingModuleId = ref<string | null>(null);
+
+const isModuleHistoryOpen = ref(false);
+const selectedHistoryModule = ref<IVehicleModuleInfo | null>(null);
+const moduleSortBy = ref<'NAME' | 'DATE_UPDATED'>('NAME');
 
 const optionSearchQuery = ref('');
 const isChallengeOpen = ref(false);
@@ -621,11 +700,65 @@ const isHistoryDialogOpen = ref(false);
 const showResultDialog = ref(false);
 const writeResult = ref<IWriteResult | null>(null);
 
-const sortedModules = computed(() => {
-  return [...store.detectedModules].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+function openModuleHistory(mod: IVehicleModuleInfo) {
+  selectedHistoryModule.value = mod;
+  isModuleHistoryOpen.value = true;
+}
+
+function formatDateTime(iso: string): string {
+  if (!iso) return '';
+  return formatLocalizedDateTime(iso, 'en-US', getSystemTimezone());
+}
+
+async function onSortByChanged(val: 'NAME' | 'DATE_UPDATED') {
+  moduleSortBy.value = val;
+  await preferencesManager.saveModuleSortByPref(val);
+}
+
+function getLatestUpdateTimestamp(mod: IVehicleModuleInfo): number {
+  if (mod.history && mod.history.length > 0) {
+    const latestIso = mod.history[mod.history.length - 1].dateRecordedISO;
+    const time = new Date(latestIso).getTime();
+    if (!isNaN(time)) return time;
+  }
+  if (mod.firstDetectedISO) {
+    const time = new Date(mod.firstDetectedISO).getTime();
+    if (!isNaN(time)) return time;
+  }
+  return 0;
+}
+
+const newestModuleId = computed<string | null>(() => {
+  if (!store.detectedModules || store.detectedModules.length === 0) return null;
+  let maxTime = 0;
+  let newestId: string | null = null;
+  for (const mod of store.detectedModules) {
+    const t = getLatestUpdateTimestamp(mod);
+    if (t > maxTime) {
+      maxTime = t;
+      newestId = mod.id;
+    }
+  }
+  return maxTime > 0 ? newestId : null;
 });
 
-onMounted(() => {
+const sortedModules = computed(() => {
+  const list = [...store.detectedModules];
+  if (moduleSortBy.value === 'DATE_UPDATED') {
+    return list.sort((a, b) => {
+      const timeA = getLatestUpdateTimestamp(a);
+      const timeB = getLatestUpdateTimestamp(b);
+      if (timeB !== timeA) {
+        return timeB - timeA;
+      }
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    });
+  }
+  return list.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+});
+
+onMounted(async () => {
+  moduleSortBy.value = await preferencesManager.loadModuleSortByPref();
   if (store.isConnected && store.detectedModules.length === 0) {
     store.scanVehicleModules();
   }
@@ -757,15 +890,7 @@ function getGroupHistoryState(groupItem: any): 'ALL' | 'SOME' | 'NONE' {
 
 function getModuleAbbreviation(moduleCode?: string): string {
   if (!moduleCode) return 'UNKNOWN';
-  const map: Record<string, string> = {
-    '726': 'BCM',
-    '706': 'IPMA',
-    '7D0': 'APIM',
-    '7A6': 'IPC',
-    '760': 'ABS',
-    '7E0': 'PCM'
-  };
-  return map[moduleCode] || moduleCode;
+  return hexUtilsGetModuleAbbreviation(moduleCode) || moduleCode;
 }
 
 function isOptionRead(option: IVehicleOption): boolean {
